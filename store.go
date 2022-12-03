@@ -37,7 +37,7 @@ func New(db *dynamodb.Client) *EventStore {
 
 // Append takes a context and Event and returns an error
 // It ensures the Version does not already exist then attempts a PUT operation on the DynamoDB EventStoreTable
-func (el *EventStore) Append(ctx context.Context, event *Event) error {
+func (es *EventStore) Append(ctx context.Context, event *Event) error {
 	//This condition makes sure the sort key Version does not already exist
 	cond := "attribute_not_exists(Version)"
 	input := &dynamodb.PutItemInput{
@@ -49,7 +49,7 @@ func (el *EventStore) Append(ctx context.Context, event *Event) error {
 		},
 		ConditionExpression: &cond,
 	}
-	_, err := el.DB.PutItem(ctx, input)
+	_, err := es.DB.PutItem(ctx, input)
 	if err != nil {
 		//Using the error package, the code checks if this is an error specific to the condition being failed and, if so, returns a sentinel error that can be checked
 		var errCheck *types.ConditionalCheckFailedException
@@ -65,28 +65,28 @@ func (el *EventStore) Append(ctx context.Context, event *Event) error {
 }
 
 // Query takes a context and DynamoDB query parameters and returns a slice of Events and an error
-func (el *EventStore) Query(ctx context.Context, queryParams *dynamodb.QueryInput) ([]Event, error) {
+func (es *EventStore) Query(ctx context.Context, queryParams *dynamodb.QueryInput) ([]Event, error) {
 	var events []Event
 	// Query paginator provides pagination for queries until there are no more pages for DynamoDB to go through
 	// See: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Query.Pagination.htm
-	p := dynamodb.NewQueryPaginator(el.DB, queryParams)
+	p := dynamodb.NewQueryPaginator(es.DB, queryParams)
 	for p.HasMorePages() {
 		out, err := p.NextPage(ctx)
 		if err != nil {
-			return events, err
+			return nil, err
 		}
 		// The output is unmarshalled into an Event slice which is appended to the events slice
 		var pItems []Event
 		err = attributevalue.UnmarshalListOfMaps(out.Items, &pItems)
 		if err != nil {
-			return events, err
+			return nil, err
 		}
 
 		events = append(events, pItems...)
 	}
 	// If the slice is empty, then error is returned
 	if len(events) < 1 {
-		return events, errors.New("no events found")
+		return nil, errors.New("no events found")
 	}
 	return events, nil
 }

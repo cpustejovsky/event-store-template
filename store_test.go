@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -75,6 +76,17 @@ func TestEventStore(t *testing.T) {
 		}
 	})
 
+	t.Run("Attempt to append existing version to event store and fail", func(t *testing.T) {
+		e := store.Event{
+			Id:      id,
+			Version: 0,
+		}
+		err := es.Append(context.Background(), &e)
+		assert.NotNil(t, err)
+		checkErr := &store.EventAlreadyExistsError{}
+		assert.True(t, errors.As(err, &checkErr))
+	})
+
 	t.Run("Query Items from Event Store", func(t *testing.T) {
 		kce := "Id = :uuid"
 		params := dynamodb.QueryInput{
@@ -88,6 +100,21 @@ func TestEventStore(t *testing.T) {
 		assert.Nil(t, err)
 		assert.Equal(t, numberOfEvents, len(events))
 	})
+
+	t.Run("Fail to query Items from Event Store", func(t *testing.T) {
+		kce := "Id = :uuid"
+		params := dynamodb.QueryInput{
+			TableName:              &store.EventStoreTable,
+			KeyConditionExpression: &kce,
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":uuid": &types.AttributeValueMemberS{Value: uuid.NewString()},
+			},
+		}
+		events, err := es.Query(ctx, &params)
+		assert.NotNil(t, err)
+		assert.Nil(t, events)
+	})
+
 	t.Cleanup(func() {
 		for i := 0; i < numberOfEvents; i++ {
 			params := dynamodb.DeleteItemInput{
