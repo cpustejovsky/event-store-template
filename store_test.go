@@ -18,6 +18,8 @@ import (
 	"time"
 )
 
+var EventStoreTable = "event-store"
+
 func TestEventStore(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping acceptance test")
@@ -48,7 +50,7 @@ func TestEventStore(t *testing.T) {
 
 	//Create Event Store
 	client := dynamodb.NewFromConfig(cfg)
-	es := store.New(client)
+	es := store.New(client, EventStoreTable)
 	assert.NotNil(t, es)
 	id := uuid.NewString()
 	numberOfEvents := 3
@@ -88,37 +90,25 @@ func TestEventStore(t *testing.T) {
 	})
 
 	t.Run("Query Items from Event Store", func(t *testing.T) {
-		kce := "Id = :uuid"
-		params := dynamodb.QueryInput{
-			TableName:              &store.EventStoreTable,
-			KeyConditionExpression: &kce,
-			ExpressionAttributeValues: map[string]types.AttributeValue{
-				":uuid": &types.AttributeValueMemberS{Value: id},
-			},
-		}
-		events, err := es.Query(ctx, &params)
+		events, err := es.Query(ctx, id)
 		assert.Nil(t, err)
 		assert.Equal(t, numberOfEvents, len(events))
 	})
 
 	t.Run("Fail to query Items from Event Store", func(t *testing.T) {
-		kce := "Id = :uuid"
-		params := dynamodb.QueryInput{
-			TableName:              &store.EventStoreTable,
-			KeyConditionExpression: &kce,
-			ExpressionAttributeValues: map[string]types.AttributeValue{
-				":uuid": &types.AttributeValueMemberS{Value: uuid.NewString()},
-			},
-		}
-		events, err := es.Query(ctx, &params)
+		events, err := es.Query(ctx, uuid.NewString())
 		assert.NotNil(t, err)
 		assert.Nil(t, events)
+	})
+
+	t.Run("Query From Version", func(t *testing.T) {
+
 	})
 
 	t.Cleanup(func() {
 		for i := 0; i < numberOfEvents; i++ {
 			params := dynamodb.DeleteItemInput{
-				TableName: &store.EventStoreTable,
+				TableName: &EventStoreTable,
 				Key: map[string]types.AttributeValue{
 					"Id":      &types.AttributeValueMemberS{Value: id},
 					"Version": &types.AttributeValueMemberN{Value: strconv.Itoa(i)},

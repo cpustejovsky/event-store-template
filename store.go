@@ -17,13 +17,12 @@ type Event struct {
 }
 
 type EventStore struct {
-	DB *dynamodb.Client
+	DB    *dynamodb.Client
+	Table string
 }
 
-var EventStoreTable = "event-store"
-
 type EventAlreadyExistsError struct {
-	ID      string
+	ID      string ``
 	Version int
 }
 
@@ -31,8 +30,8 @@ func (e *EventAlreadyExistsError) Error() string {
 	return fmt.Sprintf("event already exists for ID %s and Version %d", e.ID, e.Version)
 }
 
-func New(db *dynamodb.Client) *EventStore {
-	return &EventStore{DB: db}
+func New(db *dynamodb.Client, table string) *EventStore {
+	return &EventStore{DB: db, Table: table}
 }
 
 // Append takes a context and Event and returns an error
@@ -41,7 +40,7 @@ func (es *EventStore) Append(ctx context.Context, event *Event) error {
 	//This condition makes sure the sort key Version does not already exist
 	cond := "attribute_not_exists(Version)"
 	input := &dynamodb.PutItemInput{
-		TableName: &EventStoreTable,
+		TableName: &es.Table,
 		Item: map[string]types.AttributeValue{
 			"Id": &types.AttributeValueMemberS{Value: event.Id},
 			//AttributeValueMemberN takes a string value, see https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html
@@ -65,11 +64,19 @@ func (es *EventStore) Append(ctx context.Context, event *Event) error {
 }
 
 // Query takes a context and DynamoDB query parameters and returns a slice of Events and an error
-func (es *EventStore) Query(ctx context.Context, queryParams *dynamodb.QueryInput) ([]Event, error) {
+func (es *EventStore) Query(ctx context.Context, id string) ([]Event, error) {
 	var events []Event
+	kce := "Id = :uuid"
+	params := dynamodb.QueryInput{
+		TableName:              &es.Table,
+		KeyConditionExpression: &kce,
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":uuid": &types.AttributeValueMemberS{Value: id},
+		},
+	}
 	// Query paginator provides pagination for queries until there are no more pages for DynamoDB to go through
 	// See: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Query.Pagination.htm
-	p := dynamodb.NewQueryPaginator(es.DB, queryParams)
+	p := dynamodb.NewQueryPaginator(es.DB, &params)
 	for p.HasMorePages() {
 		out, err := p.NextPage(ctx)
 		if err != nil {
