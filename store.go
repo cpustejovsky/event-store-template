@@ -10,10 +10,17 @@ import (
 	"strconv"
 )
 
+type Character struct {
+	Name      string
+	HitPoints int
+}
+
 // Event contains necessary information for our event driven system
 type Event struct {
-	Id      string
-	Version int
+	Id        string
+	Version   int
+	Character Character
+	Note      string
 }
 
 type EventStore struct {
@@ -63,9 +70,8 @@ func (es *EventStore) Append(ctx context.Context, event *Event) error {
 	return nil
 }
 
-// Query takes a context and DynamoDB query parameters and returns a slice of Events and an error
-func (es *EventStore) Query(ctx context.Context, id string) ([]Event, error) {
-	var events []Event
+// QueryAll takes a context and id and returns a slice of Events and an error
+func (es *EventStore) QueryAll(ctx context.Context, id string) ([]Event, error) {
 	kce := "Id = :uuid"
 	params := dynamodb.QueryInput{
 		TableName:              &es.Table,
@@ -74,22 +80,40 @@ func (es *EventStore) Query(ctx context.Context, id string) ([]Event, error) {
 			":uuid": &types.AttributeValueMemberS{Value: id},
 		},
 	}
+	return es.query(ctx, &params)
+}
+
+// QuerySinceVersion takes a context, id, and version that will service as starting point for query
+// returns a slice of Events and an error
+func (es *EventStore) QuerySinceVersion(ctx context.Context, id string, version int) ([]Event, error) {
+	kce := "Id = :uuid AND Version >= :version"
+	params := dynamodb.QueryInput{
+		TableName:              &es.Table,
+		KeyConditionExpression: &kce,
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":uuid":    &types.AttributeValueMemberS{Value: id},
+			":version": &types.AttributeValueMemberN{Value: strconv.Itoa(version)},
+		},
+	}
+	return es.query(ctx, &params)
+}
+
+// query takes a context and DynamoDB query parameters and returns a slice of Events and an error
+func (es *EventStore) query(ctx context.Context, params *dynamodb.QueryInput) ([]Event, error) {
+	var events []Event
 	// Query paginator provides pagination for queries until there are no more pages for DynamoDB to go through
 	// See: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Query.Pagination.htm
-	p := dynamodb.NewQueryPaginator(es.DB, &params)
+	p := dynamodb.NewQueryPaginator(es.DB, params)
 	for p.HasMorePages() {
 		out, err := p.NextPage(ctx)
 		if err != nil {
 			return nil, err
 		}
 		// The output is unmarshalled into an Event slice which is appended to the events slice
-		var pItems []Event
-		err = attributevalue.UnmarshalListOfMaps(out.Items, &pItems)
+		err = attributevalue.UnmarshalListOfMaps(out.Items, &events)
 		if err != nil {
 			return nil, err
 		}
-
-		events = append(events, pItems...)
 	}
 	// If the slice is empty, then error is returned
 	if len(events) < 1 {

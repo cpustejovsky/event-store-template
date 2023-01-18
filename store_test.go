@@ -11,6 +11,7 @@ import (
 	store "github.com/cpustejovsky/event-store"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"os"
 	"strconv"
 	"sync"
@@ -24,6 +25,7 @@ func TestEventStore(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping acceptance test")
 	}
+
 	//Create Dynamodb Client
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -46,12 +48,12 @@ func TestEventStore(t *testing.T) {
 			},
 		),
 	)
-	assert.Nil(t, err)
+	require.Nil(t, err)
 
 	//Create Event Store
 	client := dynamodb.NewFromConfig(cfg)
 	es := store.New(client, EventStoreTable)
-	assert.NotNil(t, es)
+	require.NotNil(t, es)
 	id := uuid.NewString()
 	numberOfEvents := 3
 
@@ -65,6 +67,11 @@ func TestEventStore(t *testing.T) {
 				e := store.Event{
 					Id:      id,
 					Version: v,
+					Character: store.Character{
+						Name:      "cpustejovsky",
+						HitPoints: 42,
+					},
+					Note: "Test",
 				}
 				errChan <- es.Append(context.Background(), &e)
 			}(i)
@@ -89,20 +96,29 @@ func TestEventStore(t *testing.T) {
 		assert.True(t, errors.As(err, &checkErr))
 	})
 
-	t.Run("Query Items from Event Store", func(t *testing.T) {
-		events, err := es.Query(ctx, id)
+	t.Run("QueryAll Items from Event Store", func(t *testing.T) {
+		events, err := es.QueryAll(ctx, id)
 		assert.Nil(t, err)
 		assert.Equal(t, numberOfEvents, len(events))
 	})
 
 	t.Run("Fail to query Items from Event Store", func(t *testing.T) {
-		events, err := es.Query(ctx, uuid.NewString())
+		events, err := es.QueryAll(ctx, uuid.NewString())
 		assert.NotNil(t, err)
 		assert.Nil(t, events)
 	})
 
-	t.Run("Query From Version", func(t *testing.T) {
+	t.Run("QuerySinceVersion from Event Store", func(t *testing.T) {
+		events, err := es.QuerySinceVersion(ctx, id, 1)
+		assert.Nil(t, err)
+		assert.Equal(t, 2, len(events))
 
+	})
+
+	t.Run("Attempt QuerySinceVersion from Event Store with version higher than in event store", func(t *testing.T) {
+		events, err := es.QuerySinceVersion(ctx, id, 42)
+		assert.NotNil(t, err)
+		assert.Nil(t, events)
 	})
 
 	t.Cleanup(func() {
