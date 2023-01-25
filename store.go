@@ -51,7 +51,9 @@ func (es *EventStore) Append(ctx context.Context, event *Event) error {
 		Item: map[string]types.AttributeValue{
 			"Id": &types.AttributeValueMemberS{Value: event.Id},
 			//AttributeValueMemberN takes a string value, see https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html
-			"Version": &types.AttributeValueMemberN{Value: strconv.Itoa(event.Version)},
+			"Version":            &types.AttributeValueMemberN{Value: strconv.Itoa(event.Version)},
+			"CharacterName":      &types.AttributeValueMemberS{Value: event.Character.Name},
+			"CharacterHitPoints": &types.AttributeValueMemberN{Value: strconv.Itoa(event.Character.HitPoints)},
 		},
 		ConditionExpression: &cond,
 	}
