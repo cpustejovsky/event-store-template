@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"os"
 	"strconv"
-	"sync"
 	"testing"
 	"time"
 )
@@ -55,30 +54,32 @@ func TestEventStore(t *testing.T) {
 	es := store.New(client, EventStoreTable)
 	require.NotNil(t, es)
 	id := uuid.NewString()
-	numberOfEvents := 3
-
+	events := []store.Event{
+		{
+			Id:                      id,
+			Version:                 0,
+			CharacterName:           "cpustejovsky",
+			CharacterHitPointChange: 8,
+			Note:                    "Init",
+		},
+		{
+			Id:                      id,
+			Version:                 1,
+			CharacterName:           "cpustejovsky",
+			CharacterHitPointChange: -2,
+			Note:                    "Slashing damage from goblin",
+		},
+		{
+			Id:                      id,
+			Version:                 2,
+			CharacterName:           "cpustejovsky",
+			CharacterHitPointChange: -3,
+			Note:                    "bludgeoning damage from bugbear",
+		},
+	}
 	t.Run("Append Items to Event Store", func(t *testing.T) {
-		errChan := make(chan error, numberOfEvents)
-		var wg sync.WaitGroup
-		wg.Add(numberOfEvents)
-		for i := 0; i < numberOfEvents; i++ {
-			go func(v int) {
-				defer wg.Done()
-				e := store.Event{
-					Id:      id,
-					Version: v,
-					Character: store.Character{
-						Name:      "cpustejovsky",
-						HitPoints: 42,
-					},
-					Note: "Test",
-				}
-				errChan <- es.Append(context.Background(), &e)
-			}(i)
-		}
-		wg.Wait()
-		close(errChan)
-		for err := range errChan {
+		for _, event := range events {
+			err := es.Append(context.Background(), &event)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -97,21 +98,31 @@ func TestEventStore(t *testing.T) {
 	})
 
 	t.Run("QueryAll Items from Event Store", func(t *testing.T) {
-		events, err := es.QueryAll(ctx, id)
+		queriedEvents, err := es.QueryAll(ctx, id)
 		assert.Nil(t, err)
-		assert.Equal(t, numberOfEvents, len(events))
+		assert.Equal(t, len(events), len(queriedEvents))
+		for _, event := range events {
+			assert.Contains(t, queriedEvents, event)
+		}
+	})
+
+	t.Run("QueryAll returns specific error if no Event is found", func(t *testing.T) {
+		_, err := es.QueryAll(ctx, uuid.NewString())
+		assert.NotNil(t, err)
+		checkErr := &store.NoEventFoundError{}
+		assert.True(t, errors.As(err, &checkErr))
 	})
 
 	t.Run("Fail to query Items from Event Store", func(t *testing.T) {
-		events, err := es.QueryAll(ctx, uuid.NewString())
+		queriedEvents, err := es.QueryAll(ctx, uuid.NewString())
 		assert.NotNil(t, err)
-		assert.Nil(t, events)
+		assert.Nil(t, queriedEvents)
 	})
 
 	t.Run("QuerySinceVersion from Event Store", func(t *testing.T) {
-		events, err := es.QuerySinceVersion(ctx, id, 1)
+		queriedEvents, err := es.QuerySinceVersion(ctx, id, 1)
 		assert.Nil(t, err)
-		assert.Equal(t, 2, len(events))
+		assert.Equal(t, 2, len(queriedEvents))
 
 	})
 
@@ -122,7 +133,7 @@ func TestEventStore(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		for i := 0; i < numberOfEvents; i++ {
+		for i := 0; i < len(events); i++ {
 			params := dynamodb.DeleteItemInput{
 				TableName: &EventStoreTable,
 				Key: map[string]types.AttributeValue{
