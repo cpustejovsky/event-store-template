@@ -10,17 +10,13 @@ import (
 	"strconv"
 )
 
-type Character struct {
-	Name      string
-	HitPoints int
-}
-
 // Event contains necessary information for our event driven system
 type Event struct {
-	Id        string
-	Version   int
-	Character Character
-	Note      string
+	Id                      string
+	Version                 int
+	CharacterName           string
+	CharacterHitPointChange int
+	Note                    string
 }
 
 type EventStore struct {
@@ -37,6 +33,12 @@ func (e *EventAlreadyExistsError) Error() string {
 	return fmt.Sprintf("event already exists for ID %s and Version %d", e.ID, e.Version)
 }
 
+type NoEventFoundError struct{}
+
+func (e *NoEventFoundError) Error() string {
+	return "no event found"
+}
+
 func New(db *dynamodb.Client, table string) *EventStore {
 	return &EventStore{DB: db, Table: table}
 }
@@ -51,15 +53,16 @@ func (es *EventStore) Append(ctx context.Context, event *Event) error {
 		Item: map[string]types.AttributeValue{
 			"Id": &types.AttributeValueMemberS{Value: event.Id},
 			//AttributeValueMemberN takes a string value, see https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html
-			"Version":            &types.AttributeValueMemberN{Value: strconv.Itoa(event.Version)},
-			"CharacterName":      &types.AttributeValueMemberS{Value: event.Character.Name},
-			"CharacterHitPoints": &types.AttributeValueMemberN{Value: strconv.Itoa(event.Character.HitPoints)},
+			"Version":                 &types.AttributeValueMemberN{Value: strconv.Itoa(event.Version)},
+			"CharacterName":           &types.AttributeValueMemberS{Value: event.CharacterName},
+			"CharacterHitPointChange": &types.AttributeValueMemberN{Value: strconv.Itoa(event.CharacterHitPointChange)},
+			"Note":                    &types.AttributeValueMemberS{Value: event.Note},
 		},
 		ConditionExpression: &cond,
 	}
 	_, err := es.DB.PutItem(ctx, input)
 	if err != nil {
-		//Using the error package, the code checks if this is an error specific to the condition being failed and, if so, returns a sentinel error that can be checked
+		//Using the errors package, the code checks if this is an error specific to the condition being failed and, if so, returns a sentinel error that can be checked
 		var errCheck *types.ConditionalCheckFailedException
 		if errors.As(err, &errCheck) {
 			return &EventAlreadyExistsError{
@@ -119,7 +122,7 @@ func (es *EventStore) query(ctx context.Context, params *dynamodb.QueryInput) ([
 	}
 	// If the slice is empty, then error is returned
 	if len(events) < 1 {
-		return nil, errors.New("no events found")
+		return nil, &NoEventFoundError{}
 	}
 	return events, nil
 }
