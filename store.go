@@ -19,6 +19,24 @@ type Event struct {
 	Note                    string
 }
 
+type AggregatedEvent struct {
+	Id                 string
+	CharacterName      string
+	CharacterHitPoints int
+}
+
+func AggregateEvents(events []Event) AggregatedEvent {
+	var agg AggregatedEvent
+	for i, event := range events {
+		if i == len(events)-1 {
+			agg.Id = event.Id
+			agg.CharacterName = event.CharacterName
+		}
+		agg.CharacterHitPoints += event.CharacterHitPointChange
+	}
+	return agg
+}
+
 type EventStore struct {
 	DB    *dynamodb.Client
 	Table string

@@ -54,25 +54,26 @@ func TestEventStore(t *testing.T) {
 	es := store.New(client, EventStoreTable)
 	require.NotNil(t, es)
 	id := uuid.NewString()
+	name := "cpustejovsky"
 	events := []store.Event{
 		{
 			Id:                      id,
 			Version:                 0,
-			CharacterName:           "cpustejovsky",
+			CharacterName:           name,
 			CharacterHitPointChange: 8,
 			Note:                    "Init",
 		},
 		{
 			Id:                      id,
 			Version:                 1,
-			CharacterName:           "cpustejovsky",
+			CharacterName:           name,
 			CharacterHitPointChange: -2,
 			Note:                    "Slashing damage from goblin",
 		},
 		{
 			Id:                      id,
 			Version:                 2,
-			CharacterName:           "cpustejovsky",
+			CharacterName:           name,
 			CharacterHitPointChange: -3,
 			Note:                    "bludgeoning damage from bugbear",
 		},
@@ -130,6 +131,17 @@ func TestEventStore(t *testing.T) {
 		events, err := es.QuerySinceVersion(ctx, id, 42)
 		assert.NotNil(t, err)
 		assert.Nil(t, events)
+	})
+
+	t.Run("Aggregate Events from Event Store", func(t *testing.T) {
+		queriedEvents, err := es.QueryAll(ctx, id)
+		require.Nil(t, err)
+		require.Equal(t, len(events), len(queriedEvents))
+		aggEvent := store.AggregateEvents(queriedEvents)
+		assert.Nil(t, err)
+		hp := events[0].CharacterHitPointChange + events[1].CharacterHitPointChange + events[2].CharacterHitPointChange
+		assert.Equal(t, hp, aggEvent.CharacterHitPoints)
+		assert.Equal(t, name, aggEvent.CharacterName)
 	})
 
 	t.Cleanup(func() {
