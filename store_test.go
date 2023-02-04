@@ -133,11 +133,9 @@ func TestEventStore(t *testing.T) {
 		assert.Nil(t, events)
 	})
 
-	t.Run("Aggregate Events from Event Store", func(t *testing.T) {
-		queriedEvents, err := es.QueryAll(ctx, id)
+	t.Run("Replay Events from Event Store", func(t *testing.T) {
+		aggEvent, err := es.Replay(ctx, id)
 		require.Nil(t, err)
-		require.Equal(t, len(events), len(queriedEvents))
-		aggEvent := store.AggregateEvents(queriedEvents)
 		assert.Nil(t, err)
 		hp := events[0].CharacterHitPointChange + events[1].CharacterHitPointChange + events[2].CharacterHitPointChange
 		assert.Equal(t, hp, aggEvent.CharacterHitPoints)
