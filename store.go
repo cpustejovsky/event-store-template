@@ -22,13 +22,6 @@ type Event struct {
 	Note               string
 }
 
-type AggregatedEvent struct {
-	Id                 string
-	LatestVersion      int
-	CharacterName      string
-	CharacterHitPoints int
-}
-
 type EventStore struct {
 	DB    *dynamodb.Client
 	Table string
@@ -51,17 +44,6 @@ func (e *NoEventFoundError) Error() string {
 
 func New(db *dynamodb.Client, table string) *EventStore {
 	return &EventStore{DB: db, Table: table}
-}
-
-func (es *EventStore) Snapshot(ctx context.Context, agg *AggregatedEvent) error {
-	e := &Event{
-		Id:                 agg.Id,
-		Version:            agg.LatestVersion + 1,
-		CharacterName:      agg.CharacterName,
-		CharacterHitPoints: agg.CharacterHitPoints,
-		Note:               SnapshotValue,
-	}
-	return es.Append(ctx, e)
 }
 
 // Append takes a context and Event and returns an error
@@ -95,55 +77,37 @@ func (es *EventStore) Append(ctx context.Context, event *Event) error {
 	return nil
 }
 
-// Replay takes an id, queries events since the last snapshot, and returns an AggregatedEvent
-func (es *EventStore) Replay(ctx context.Context, id string) (*AggregatedEvent, error) {
-	events, err := es.QueryFromLastSnapshot(ctx, id)
+func (es *EventStore) Snapshot(ctx context.Context, agg *Event) error {
+	e := &Event{
+		Id:                 agg.Id,
+		Version:            agg.Version,
+		CharacterName:      agg.CharacterName,
+		CharacterHitPoints: agg.CharacterHitPoints,
+		Note:               SnapshotValue,
+	}
+	return es.Append(ctx, e)
+}
+
+// Project takes an id, queries events since the last snapshot, and returns a reconstituted Event
+func (es *EventStore) Project(ctx context.Context, id string) (*Event, error) {
+	version, err := es.getLastSnapshotVersion(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	agg := aggregateEvents(events)
-	return &agg, nil
-}
-
-// ReplayFromBeginning takes an id, queries the entire event store, and returns an AggregatedEvent
-func (es *EventStore) ReplayAll(ctx context.Context, id string) (*AggregatedEvent, error) {
-	events, err := es.QueryAll(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	agg := aggregateEvents(events)
-	return &agg, nil
-}
-
-func (es *EventStore) QueryFromLastSnapshot(ctx context.Context, id string) ([]Event, error) {
 	params := dynamodb.QueryInput{
-		TableName:              aws.String(es.Table),
-		KeyConditionExpression: aws.String("Id = :uuid"),
-		FilterExpression:       aws.String("Note = :note"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":uuid": &types.AttributeValueMemberS{Value: id},
-			":note": &types.AttributeValueMemberS{Value: "SNAPSHOT"},
-		},
-		Limit:            aws.Int32(1),
-		ScanIndexForward: aws.Bool(false),
-	}
-	events, err := es.query(ctx, &params)
-	if err != nil {
-		checkErr := &NoEventFoundError{}
-		if errors.As(err, &checkErr) {
-			return es.QueryAll(ctx, id)
-		}
-		return nil, err
-	}
-	params = dynamodb.QueryInput{
 		TableName:              aws.String(es.Table),
 		KeyConditionExpression: aws.String("Id = :uuid AND Version >= :version"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":uuid":    &types.AttributeValueMemberS{Value: id},
-			":version": &types.AttributeValueMemberN{Value: strconv.Itoa(events[0].Version)},
+			":version": &types.AttributeValueMemberN{Value: strconv.Itoa(version)},
 		},
 	}
-	return es.query(ctx, &params)
+	events, err := es.query(ctx, &params)
+	if err != nil {
+		return nil, err
+	}
+	e := reconstituteEvent(events)
+	return &e, nil
 }
 
 // QueryAll takes a context and id and returns a slice of Events and an error
@@ -154,26 +118,35 @@ func (es *EventStore) QueryAll(ctx context.Context, id string) ([]Event, error) 
 		FilterExpression:       aws.String("Note <> :note"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":uuid": &types.AttributeValueMemberS{Value: id},
-			":note": &types.AttributeValueMemberS{Value: "SNAPSHOT"},
+			":note": &types.AttributeValueMemberS{Value: SnapshotValue},
 		},
 	}
 	return es.query(ctx, &params)
 }
 
-// QuerySinceVersion takes a context, id, and version that will service as starting point for query
-// returns a slice of Events and an error
-func (es *EventStore) QuerySinceVersion(ctx context.Context, id string, version int) ([]Event, error) {
+func (es *EventStore) getLastSnapshotVersion(ctx context.Context, id string) (int, error) {
 	params := dynamodb.QueryInput{
 		TableName:              aws.String(es.Table),
-		KeyConditionExpression: aws.String("Id = :uuid AND Version >= :version"),
-		FilterExpression:       aws.String("Note <> :note"),
+		KeyConditionExpression: aws.String("Id = :uuid"),
+		FilterExpression:       aws.String("Note = :note"),
+		ProjectionExpression:   aws.String("Version"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":uuid":    &types.AttributeValueMemberS{Value: id},
-			":version": &types.AttributeValueMemberN{Value: strconv.Itoa(version)},
-			":note":    &types.AttributeValueMemberS{Value: "SNAPSHOT"},
+			":uuid": &types.AttributeValueMemberS{Value: id},
+			":note": &types.AttributeValueMemberS{Value: "SNAPSHOT"},
 		},
+		Limit:            aws.Int32(1),
+		ScanIndexForward: aws.Bool(false),
 	}
-	return es.query(ctx, &params)
+
+	events, err := es.query(ctx, &params)
+	if err != nil {
+		checkErr := &NoEventFoundError{}
+		if errors.As(err, &checkErr) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return events[0].Version, nil
 }
 
 // query takes a context and DynamoDB query parameters and returns a slice of Events and an error
@@ -200,15 +173,15 @@ func (es *EventStore) query(ctx context.Context, params *dynamodb.QueryInput) ([
 	return events, nil
 }
 
-func aggregateEvents(events []Event) AggregatedEvent {
-	var agg AggregatedEvent
+func reconstituteEvent(events []Event) Event {
+	var e Event
 	for i, event := range events {
 		if i == len(events)-1 {
-			agg.Id = event.Id
-			agg.CharacterName = event.CharacterName
-			agg.LatestVersion = event.Version
+			e.Id = event.Id
+			e.CharacterName = event.CharacterName
+			e.Version = event.Version + 1
 		}
-		agg.CharacterHitPoints += event.CharacterHitPoints
+		e.CharacterHitPoints += event.CharacterHitPoints
 	}
-	return agg
+	return e
 }
