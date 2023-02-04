@@ -25,7 +25,7 @@ type AggregatedEvent struct {
 	CharacterHitPoints int
 }
 
-func AggregateEvents(events []Event) AggregatedEvent {
+func aggregateEvents(events []Event) AggregatedEvent {
 	var agg AggregatedEvent
 	for i, event := range events {
 		if i == len(events)-1 {
@@ -143,4 +143,13 @@ func (es *EventStore) query(ctx context.Context, params *dynamodb.QueryInput) ([
 		return nil, &NoEventFoundError{}
 	}
 	return events, nil
+}
+
+func (es *EventStore) Replay(ctx context.Context, id string) (*AggregatedEvent, error) {
+	events, err := es.QueryAll(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	agg := aggregateEvents(events)
+	return &agg, nil
 }
