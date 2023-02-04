@@ -115,51 +115,18 @@ func TestEventStore(t *testing.T) {
 		assert.True(t, errors.As(err, &checkErr))
 	})
 
-	t.Run("QuerySinceVersion from Event Store", func(t *testing.T) {
-		queriedEvents, err := es.QuerySinceVersion(ctx, id, 1)
-		assert.Nil(t, err)
-		assert.Equal(t, 2, len(queriedEvents))
-
-	})
-
-	t.Run("Attempt QuerySinceVersion from Event Store with version higher than in event store", func(t *testing.T) {
-		events, err := es.QuerySinceVersion(ctx, id, 42)
-		assert.NotNil(t, err)
-		assert.Nil(t, events)
-	})
-
-	t.Run("Replay Events from Event Store", func(t *testing.T) {
-		aggEvent, err := es.Replay(ctx, id)
+	t.Run("Project Events from Event Store since Snapshot", func(t *testing.T) {
+		agg, err := es.Project(ctx, id)
 		require.Nil(t, err)
-		assert.Nil(t, err)
-		assert.Equal(t, hp, aggEvent.CharacterHitPoints)
-		assert.Equal(t, name, aggEvent.CharacterName)
-	})
-
-	t.Run("QueryFromLastSnapshot returns all events if there is no snapshot", func(t *testing.T) {
-		queriedEvents, err := es.QueryFromLastSnapshot(ctx, id)
-		assert.Nil(t, err)
-		assert.Equal(t, len(events), len(queriedEvents))
-		for _, event := range events {
-			assert.Contains(t, queriedEvents, event)
-		}
+		assert.Equal(t, hp, agg.CharacterHitPoints)
+		assert.Equal(t, name, agg.CharacterName)
 	})
 
 	t.Run("Snapshot should return no error", func(t *testing.T) {
-		agg, err := es.Replay(ctx, id)
+		agg, err := es.Project(ctx, id)
 		assert.Nil(t, err)
 		err = es.Snapshot(ctx, agg)
 		assert.Nil(t, err)
-	})
-
-	t.Run("QueryFromLastSnapshot returns snapshot", func(t *testing.T) {
-		queriedEvents, err := es.QueryFromLastSnapshot(ctx, id)
-		require.Nil(t, err)
-		require.Equal(t, 1, len(queriedEvents))
-		snapshot := queriedEvents[0]
-		assert.Equal(t, hp, snapshot.CharacterHitPoints)
-		assert.Equal(t, name, snapshot.CharacterName)
-		assert.Equal(t, store.SnapshotValue, snapshot.Note)
 	})
 
 	t.Run("QueryAll should not return the snapshot", func(t *testing.T) {
