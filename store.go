@@ -68,7 +68,6 @@ func (es *EventStore) Snapshot(ctx context.Context, agg *AggregatedEvent) error 
 // It ensures the Version does not already exist then attempts a PUT operation on the DynamoDB EventStoreTable
 func (es *EventStore) Append(ctx context.Context, event *Event) error {
 	//This condition makes sure the sort key Version does not already exist
-	cond := "attribute_not_exists(Version)"
 	input := &dynamodb.PutItemInput{
 		TableName: &es.Table,
 		Item: map[string]types.AttributeValue{
@@ -79,7 +78,7 @@ func (es *EventStore) Append(ctx context.Context, event *Event) error {
 			"CharacterHitPoints": &types.AttributeValueMemberN{Value: strconv.Itoa(event.CharacterHitPoints)},
 			"Note":               &types.AttributeValueMemberS{Value: event.Note},
 		},
-		ConditionExpression: &cond,
+		ConditionExpression: aws.String("attribute_not_exists(Version)"),
 	}
 	_, err := es.DB.PutItem(ctx, input)
 	if err != nil {
@@ -136,17 +135,26 @@ func (es *EventStore) QueryFromLastSnapshot(ctx context.Context, id string) ([]E
 		}
 		return nil, err
 	}
-	return es.QuerySinceVersion(ctx, id, events[0].Version)
+	params = dynamodb.QueryInput{
+		TableName:              aws.String(es.Table),
+		KeyConditionExpression: aws.String("Id = :uuid AND Version >= :version"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":uuid":    &types.AttributeValueMemberS{Value: id},
+			":version": &types.AttributeValueMemberN{Value: strconv.Itoa(events[0].Version)},
+		},
+	}
+	return es.query(ctx, &params)
 }
 
 // QueryAll takes a context and id and returns a slice of Events and an error
 func (es *EventStore) QueryAll(ctx context.Context, id string) ([]Event, error) {
-	kce := "Id = :uuid"
 	params := dynamodb.QueryInput{
-		TableName:              &es.Table,
-		KeyConditionExpression: &kce,
+		TableName:              aws.String(es.Table),
+		KeyConditionExpression: aws.String("Id = :uuid"),
+		FilterExpression:       aws.String("Note <> :note"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":uuid": &types.AttributeValueMemberS{Value: id},
+			":note": &types.AttributeValueMemberS{Value: "SNAPSHOT"},
 		},
 	}
 	return es.query(ctx, &params)
@@ -155,13 +163,14 @@ func (es *EventStore) QueryAll(ctx context.Context, id string) ([]Event, error) 
 // QuerySinceVersion takes a context, id, and version that will service as starting point for query
 // returns a slice of Events and an error
 func (es *EventStore) QuerySinceVersion(ctx context.Context, id string, version int) ([]Event, error) {
-	kce := "Id = :uuid AND Version >= :version"
 	params := dynamodb.QueryInput{
-		TableName:              &es.Table,
-		KeyConditionExpression: &kce,
+		TableName:              aws.String(es.Table),
+		KeyConditionExpression: aws.String("Id = :uuid AND Version >= :version"),
+		FilterExpression:       aws.String("Note <> :note"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":uuid":    &types.AttributeValueMemberS{Value: id},
 			":version": &types.AttributeValueMemberN{Value: strconv.Itoa(version)},
+			":note":    &types.AttributeValueMemberS{Value: "SNAPSHOT"},
 		},
 	}
 	return es.query(ctx, &params)

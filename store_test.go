@@ -162,6 +162,15 @@ func TestEventStore(t *testing.T) {
 		assert.Equal(t, store.SnapshotValue, snapshot.Note)
 	})
 
+	t.Run("QueryAll should not return the snapshot", func(t *testing.T) {
+		queriedEvents, err := es.QueryAll(ctx, id)
+		assert.Nil(t, err)
+		assert.Equal(t, len(events), len(queriedEvents))
+		for _, event := range events {
+			assert.NotEqual(t, store.SnapshotValue, event.Note)
+		}
+	})
+
 	t.Cleanup(func() {
 		for i := 0; i < len(events); i++ {
 			params := dynamodb.DeleteItemInput{
