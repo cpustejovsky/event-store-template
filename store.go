@@ -4,23 +4,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"strconv"
 )
 
+const SnapshotValue string = "SNAPSHOT"
+
 // Event contains necessary information for our event driven system
 type Event struct {
-	Id                      string
-	Version                 int
-	CharacterName           string
-	CharacterHitPointChange int
-	Note                    string
+	Id                 string
+	Version            int
+	CharacterName      string
+	CharacterHitPoints int
+	Note               string
 }
 
 type AggregatedEvent struct {
 	Id                 string
+	LatestVersion      int
 	CharacterName      string
 	CharacterHitPoints int
 }
@@ -49,6 +53,17 @@ func New(db *dynamodb.Client, table string) *EventStore {
 	return &EventStore{DB: db, Table: table}
 }
 
+func (es *EventStore) Snapshot(ctx context.Context, agg *AggregatedEvent) error {
+	e := &Event{
+		Id:                 agg.Id,
+		Version:            agg.LatestVersion + 1,
+		CharacterName:      agg.CharacterName,
+		CharacterHitPoints: agg.CharacterHitPoints,
+		Note:               SnapshotValue,
+	}
+	return es.Append(ctx, e)
+}
+
 // Append takes a context and Event and returns an error
 // It ensures the Version does not already exist then attempts a PUT operation on the DynamoDB EventStoreTable
 func (es *EventStore) Append(ctx context.Context, event *Event) error {
@@ -59,10 +74,10 @@ func (es *EventStore) Append(ctx context.Context, event *Event) error {
 		Item: map[string]types.AttributeValue{
 			"Id": &types.AttributeValueMemberS{Value: event.Id},
 			//AttributeValueMemberN takes a string value, see https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html
-			"Version":                 &types.AttributeValueMemberN{Value: strconv.Itoa(event.Version)},
-			"CharacterName":           &types.AttributeValueMemberS{Value: event.CharacterName},
-			"CharacterHitPointChange": &types.AttributeValueMemberN{Value: strconv.Itoa(event.CharacterHitPointChange)},
-			"Note":                    &types.AttributeValueMemberS{Value: event.Note},
+			"Version":            &types.AttributeValueMemberN{Value: strconv.Itoa(event.Version)},
+			"CharacterName":      &types.AttributeValueMemberS{Value: event.CharacterName},
+			"CharacterHitPoints": &types.AttributeValueMemberN{Value: strconv.Itoa(event.CharacterHitPoints)},
+			"Note":               &types.AttributeValueMemberS{Value: event.Note},
 		},
 		ConditionExpression: &cond,
 	}
@@ -92,7 +107,7 @@ func (es *EventStore) Replay(ctx context.Context, id string) (*AggregatedEvent, 
 }
 
 // ReplayFromBeginning takes an id, queries the entire event store, and returns an AggregatedEvent
-func (es *EventStore) ReplayFromBeginning(ctx context.Context, id string) (*AggregatedEvent, error) {
+func (es *EventStore) ReplayAll(ctx context.Context, id string) (*AggregatedEvent, error) {
 	events, err := es.QueryAll(ctx, id)
 	if err != nil {
 		return nil, err
@@ -102,20 +117,16 @@ func (es *EventStore) ReplayFromBeginning(ctx context.Context, id string) (*Aggr
 }
 
 func (es *EventStore) QueryFromLastSnapshot(ctx context.Context, id string) ([]Event, error) {
-	kce := "Id = :uuid"
-	fe := "Note = :note"
-	var lim int32 = 1
-	sfi := false
 	params := dynamodb.QueryInput{
-		TableName:              &es.Table,
-		KeyConditionExpression: &kce,
-		FilterExpression:       &fe,
+		TableName:              aws.String(es.Table),
+		KeyConditionExpression: aws.String("Id = :uuid"),
+		FilterExpression:       aws.String("Note = :note"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":uuid": &types.AttributeValueMemberS{Value: id},
 			":note": &types.AttributeValueMemberS{Value: "SNAPSHOT"},
 		},
-		Limit:            &lim,
-		ScanIndexForward: &sfi,
+		Limit:            aws.Int32(1),
+		ScanIndexForward: aws.Bool(false),
 	}
 	events, err := es.query(ctx, &params)
 	if err != nil {
@@ -186,8 +197,9 @@ func aggregateEvents(events []Event) AggregatedEvent {
 		if i == len(events)-1 {
 			agg.Id = event.Id
 			agg.CharacterName = event.CharacterName
+			agg.LatestVersion = event.Version
 		}
-		agg.CharacterHitPoints += event.CharacterHitPointChange
+		agg.CharacterHitPoints += event.CharacterHitPoints
 	}
 	return agg
 }

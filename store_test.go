@@ -57,27 +57,28 @@ func TestEventStore(t *testing.T) {
 	name := "cpustejovsky"
 	events := []store.Event{
 		{
-			Id:                      id,
-			Version:                 0,
-			CharacterName:           name,
-			CharacterHitPointChange: 8,
-			Note:                    "Init",
+			Id:                 id,
+			Version:            0,
+			CharacterName:      name,
+			CharacterHitPoints: 8,
+			Note:               "Init",
 		},
 		{
-			Id:                      id,
-			Version:                 1,
-			CharacterName:           name,
-			CharacterHitPointChange: -2,
-			Note:                    "Slashing damage from goblin",
+			Id:                 id,
+			Version:            1,
+			CharacterName:      name,
+			CharacterHitPoints: -2,
+			Note:               "Slashing damage from goblin",
 		},
 		{
-			Id:                      id,
-			Version:                 2,
-			CharacterName:           name,
-			CharacterHitPointChange: -3,
-			Note:                    "bludgeoning damage from bugbear",
+			Id:                 id,
+			Version:            2,
+			CharacterName:      name,
+			CharacterHitPoints: -3,
+			Note:               "bludgeoning damage from bugbear",
 		},
 	}
+	hp := events[0].CharacterHitPoints + events[1].CharacterHitPoints + events[2].CharacterHitPoints
 	t.Run("Append Items to Event Store", func(t *testing.T) {
 		for _, event := range events {
 			err := es.Append(context.Background(), &event)
@@ -131,7 +132,6 @@ func TestEventStore(t *testing.T) {
 		aggEvent, err := es.Replay(ctx, id)
 		require.Nil(t, err)
 		assert.Nil(t, err)
-		hp := events[0].CharacterHitPointChange + events[1].CharacterHitPointChange + events[2].CharacterHitPointChange
 		assert.Equal(t, hp, aggEvent.CharacterHitPoints)
 		assert.Equal(t, name, aggEvent.CharacterName)
 	})
@@ -143,6 +143,23 @@ func TestEventStore(t *testing.T) {
 		for _, event := range events {
 			assert.Contains(t, queriedEvents, event)
 		}
+	})
+
+	t.Run("Snapshot should return no error", func(t *testing.T) {
+		agg, err := es.Replay(ctx, id)
+		assert.Nil(t, err)
+		err = es.Snapshot(ctx, agg)
+		assert.Nil(t, err)
+	})
+
+	t.Run("QueryFromLastSnapshot returns snapshot", func(t *testing.T) {
+		queriedEvents, err := es.QueryFromLastSnapshot(ctx, id)
+		require.Nil(t, err)
+		require.Equal(t, 1, len(queriedEvents))
+		snapshot := queriedEvents[0]
+		assert.Equal(t, hp, snapshot.CharacterHitPoints)
+		assert.Equal(t, name, snapshot.CharacterName)
+		assert.Equal(t, store.SnapshotValue, snapshot.Note)
 	})
 
 	t.Cleanup(func() {
