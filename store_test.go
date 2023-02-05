@@ -114,12 +114,6 @@ func TestEventStore(t *testing.T) {
 		assert.True(t, errors.As(err, &checkErr))
 	})
 
-	t.Run("Fail to query Items from Event Store", func(t *testing.T) {
-		queriedEvents, err := es.QueryAll(ctx, uuid.NewString())
-		assert.NotNil(t, err)
-		assert.Nil(t, queriedEvents)
-	})
-
 	t.Run("QuerySinceVersion from Event Store", func(t *testing.T) {
 		queriedEvents, err := es.QuerySinceVersion(ctx, id, 1)
 		assert.Nil(t, err)
@@ -140,6 +134,15 @@ func TestEventStore(t *testing.T) {
 		hp := events[0].CharacterHitPointChange + events[1].CharacterHitPointChange + events[2].CharacterHitPointChange
 		assert.Equal(t, hp, aggEvent.CharacterHitPoints)
 		assert.Equal(t, name, aggEvent.CharacterName)
+	})
+
+	t.Run("QueryFromLastSnapshot returns all events if there is no snapshot", func(t *testing.T) {
+		queriedEvents, err := es.QueryFromLastSnapshot(ctx, id)
+		assert.Nil(t, err)
+		assert.Equal(t, len(events), len(queriedEvents))
+		for _, event := range events {
+			assert.Contains(t, queriedEvents, event)
+		}
 	})
 
 	t.Cleanup(func() {

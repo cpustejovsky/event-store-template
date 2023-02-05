@@ -25,18 +25,6 @@ type AggregatedEvent struct {
 	CharacterHitPoints int
 }
 
-func aggregateEvents(events []Event) AggregatedEvent {
-	var agg AggregatedEvent
-	for i, event := range events {
-		if i == len(events)-1 {
-			agg.Id = event.Id
-			agg.CharacterName = event.CharacterName
-		}
-		agg.CharacterHitPoints += event.CharacterHitPointChange
-	}
-	return agg
-}
-
 type EventStore struct {
 	DB    *dynamodb.Client
 	Table string
@@ -93,6 +81,53 @@ func (es *EventStore) Append(ctx context.Context, event *Event) error {
 	return nil
 }
 
+// Replay takes an id, queries events since the last snapshot, and returns an AggregatedEvent
+func (es *EventStore) Replay(ctx context.Context, id string) (*AggregatedEvent, error) {
+	events, err := es.QueryFromLastSnapshot(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	agg := aggregateEvents(events)
+	return &agg, nil
+}
+
+// ReplayFromBeginning takes an id, queries the entire event store, and returns an AggregatedEvent
+func (es *EventStore) ReplayFromBeginning(ctx context.Context, id string) (*AggregatedEvent, error) {
+	events, err := es.QueryAll(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	agg := aggregateEvents(events)
+	return &agg, nil
+}
+
+func (es *EventStore) QueryFromLastSnapshot(ctx context.Context, id string) ([]Event, error) {
+	kce := "Id = :uuid"
+	fe := "Note = :note"
+	var lim int32 = 1
+	sfi := false
+	params := dynamodb.QueryInput{
+		TableName:              &es.Table,
+		KeyConditionExpression: &kce,
+		FilterExpression:       &fe,
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":uuid": &types.AttributeValueMemberS{Value: id},
+			":note": &types.AttributeValueMemberS{Value: "SNAPSHOT"},
+		},
+		Limit:            &lim,
+		ScanIndexForward: &sfi,
+	}
+	events, err := es.query(ctx, &params)
+	if err != nil {
+		checkErr := &NoEventFoundError{}
+		if errors.As(err, &checkErr) {
+			return es.QueryAll(ctx, id)
+		}
+		return nil, err
+	}
+	return es.QuerySinceVersion(ctx, id, events[0].Version)
+}
+
 // QueryAll takes a context and id and returns a slice of Events and an error
 func (es *EventStore) QueryAll(ctx context.Context, id string) ([]Event, error) {
 	kce := "Id = :uuid"
@@ -145,11 +180,14 @@ func (es *EventStore) query(ctx context.Context, params *dynamodb.QueryInput) ([
 	return events, nil
 }
 
-func (es *EventStore) Replay(ctx context.Context, id string) (*AggregatedEvent, error) {
-	events, err := es.QueryAll(ctx, id)
-	if err != nil {
-		return nil, err
+func aggregateEvents(events []Event) AggregatedEvent {
+	var agg AggregatedEvent
+	for i, event := range events {
+		if i == len(events)-1 {
+			agg.Id = event.Id
+			agg.CharacterName = event.CharacterName
+		}
+		agg.CharacterHitPoints += event.CharacterHitPointChange
 	}
-	agg := aggregateEvents(events)
-	return &agg, nil
+	return agg
 }
