@@ -10,6 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.17.3
 	github.com/google/uuid v1.3.0
 	github.com/stretchr/testify v1.8.1
+	google.golang.org/protobuf v1.28.1
 )
 
 require (

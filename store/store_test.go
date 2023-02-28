@@ -8,10 +8,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	store "github.com/cpustejovsky/event-store"
+	"github.com/cpustejovsky/event-store/event"
+	"github.com/cpustejovsky/event-store/events"
+	"github.com/cpustejovsky/event-store/protos/hitpoints"
+	"github.com/cpustejovsky/event-store/store"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"os"
 	"strconv"
 	"testing"
@@ -49,38 +53,42 @@ func TestEventStore(t *testing.T) {
 	)
 	require.Nil(t, err)
 
-	//Create Event Store
+	//Create Envelope Store
 	client := dynamodb.NewFromConfig(cfg)
 	es := store.New(client, EventStoreTable)
 	require.NotNil(t, es)
 	id := uuid.NewString()
 	name := "cpustejovsky"
-	events := []store.Event{
-		{
-			Id:                 id,
-			Version:            0,
-			CharacterName:      name,
-			CharacterHitPoints: 8,
-			Note:               "Init",
-		},
-		{
-			Id:                 id,
-			Version:            1,
-			CharacterName:      name,
-			CharacterHitPoints: -2,
-			Note:               "Slashing damage from goblin",
-		},
-		{
-			Id:                 id,
-			Version:            2,
-			CharacterName:      name,
-			CharacterHitPoints: -3,
-			Note:               "bludgeoning damage from bugbear",
-		},
+	hitPointEvents := []hitpoints.PlayerCharacterHitPoints{{
+		CharacterName:      name,
+		CharacterHitPoints: 8,
+		Note:               "Init",
+	}, {
+		CharacterName:      name,
+		CharacterHitPoints: -2,
+		Note:               "Slashing damage from goblin",
+	}, {
+		CharacterName:      name,
+		CharacterHitPoints: -3,
+		Note:               "bludgeoning damage from bugbear",
+	}}
+	var envelopes []event.Envelope
+	for i, e := range hitPointEvents {
+		bin, err := proto.Marshal(&e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		envelopes = append(envelopes, event.Envelope{
+			Id:        id,
+			Version:   i,
+			Event:     bin,
+			EventName: events.HitPointsName,
+		})
 	}
-	hp := events[0].CharacterHitPoints + events[1].CharacterHitPoints + events[2].CharacterHitPoints
-	t.Run("Append Items to Event Store", func(t *testing.T) {
-		for _, event := range events {
+
+	hp := hitPointEvents[0].CharacterHitPoints + hitPointEvents[1].CharacterHitPoints + hitPointEvents[2].CharacterHitPoints
+	t.Run("Append Items to Envelope Store", func(t *testing.T) {
+		for _, event := range envelopes {
 			err := es.Append(context.Background(), &event)
 			if err != nil {
 				t.Fatal(err)
@@ -89,7 +97,7 @@ func TestEventStore(t *testing.T) {
 	})
 
 	t.Run("Attempt to append existing version to event store and fail", func(t *testing.T) {
-		e := store.Event{
+		e := event.Envelope{
 			Id:      id,
 			Version: 0,
 		}
@@ -99,27 +107,30 @@ func TestEventStore(t *testing.T) {
 		assert.True(t, errors.As(err, &checkErr))
 	})
 
-	t.Run("QueryAll Items from Event Store", func(t *testing.T) {
+	t.Run("QueryAll Items from Envelope Store", func(t *testing.T) {
 		queriedEvents, err := es.QueryAll(ctx, id)
 		assert.Nil(t, err)
-		assert.Equal(t, len(events), len(queriedEvents))
-		for _, event := range events {
+		assert.Equal(t, len(envelopes), len(queriedEvents))
+		for _, event := range envelopes {
 			assert.Contains(t, queriedEvents, event)
 		}
 	})
 
-	t.Run("QueryAll returns specific error if no Event is found", func(t *testing.T) {
+	t.Run("QueryAll returns specific error if no Envelope is found", func(t *testing.T) {
 		_, err := es.QueryAll(ctx, uuid.NewString())
 		assert.NotNil(t, err)
 		checkErr := &store.NoEventFoundError{}
 		assert.True(t, errors.As(err, &checkErr))
 	})
 
-	t.Run("Project Events from Event Store since Snapshot", func(t *testing.T) {
+	t.Run("Project Events from Envelope Store since Snapshot", func(t *testing.T) {
 		agg, err := es.Project(ctx, id)
 		require.Nil(t, err)
-		assert.Equal(t, hp, agg.CharacterHitPoints)
-		assert.Equal(t, name, agg.CharacterName)
+		hpEvent := hitpoints.PlayerCharacterHitPoints{}
+		err = proto.Unmarshal(agg.Event, &hpEvent)
+		require.Nil(t, err)
+		assert.Equal(t, hp, hpEvent.CharacterHitPoints)
+		assert.Equal(t, name, hpEvent.CharacterName)
 	})
 
 	t.Run("Snapshot should return no error", func(t *testing.T) {
@@ -132,14 +143,14 @@ func TestEventStore(t *testing.T) {
 	t.Run("QueryAll should not return the snapshot", func(t *testing.T) {
 		queriedEvents, err := es.QueryAll(ctx, id)
 		assert.Nil(t, err)
-		assert.Equal(t, len(events), len(queriedEvents))
-		for _, event := range events {
+		assert.Equal(t, len(envelopes), len(queriedEvents))
+		for _, event := range envelopes {
 			assert.NotEqual(t, store.SnapshotValue, event.Note)
 		}
 	})
 
 	t.Cleanup(func() {
-		for i := 0; i < len(events); i++ {
+		for i := 0; i < len(envelopes); i++ {
 			params := dynamodb.DeleteItemInput{
 				TableName: &EventStoreTable,
 				Key: map[string]types.AttributeValue{
