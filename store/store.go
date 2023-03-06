@@ -50,6 +50,7 @@ func (es *EventStore) Append(ctx context.Context, e *event.Envelope) error {
 			"Version":   &types.AttributeValueMemberN{Value: strconv.Itoa(e.Version)},
 			"EventName": &types.AttributeValueMemberS{Value: e.EventName},
 			"Event":     &types.AttributeValueMemberB{Value: e.Event},
+			"Note":      &types.AttributeValueMemberS{Value: e.Note},
 		},
 		ConditionExpression: aws.String("attribute_not_exists(Version)"),
 	}

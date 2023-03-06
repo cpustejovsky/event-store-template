@@ -18,6 +18,7 @@ func (h *HitPoints) Aggregate(events [][]byte) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		h.CharacterName = hp.CharacterName
 		h.CharacterHitPoints += hp.CharacterHitPoints
 		h.Note += fmt.Sprintf("hit point change of %d with note '%s'", hp.GetCharacterHitPoints(), hp.GetNote())
 	}

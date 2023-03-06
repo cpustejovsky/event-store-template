@@ -13,16 +13,17 @@ type Envelope struct {
 
 func AggregateEnvelopes(envelopes []Envelope) (*Envelope, error) {
 	var e Envelope
-	firstEnv := envelopes[0]
-	e.Id = firstEnv.Id
-	e.Version = firstEnv.Version
-	e.EventName = firstEnv.EventName
 	//Loop through envelopes to get
 	var events [][]byte
-	for _, envelope := range envelopes {
+	for i, envelope := range envelopes {
+		if i == len(envelopes)-1 {
+			e.Id = envelope.Id
+			e.Version = envelope.Version + 1
+			e.EventName = envelope.EventName
+		}
 		events = append(events, envelope.Event)
 	}
-	agg, err := reconstituteEvents(events, firstEnv.EventName)
+	agg, err := reconstituteEvents(events, e.EventName)
 	if err != nil {
 		return nil, err
 	}
