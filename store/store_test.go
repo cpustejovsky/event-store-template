@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -98,13 +99,17 @@ func TestEventStore(t *testing.T) {
 
 	t.Run("Attempt to append existing version to event store and fail", func(t *testing.T) {
 		e := event.Envelope{
-			Id:      id,
-			Version: 0,
+			Id:        id,
+			Version:   0,
+			EventName: "test",
+			Event:     []byte{},
+			Note:      "",
 		}
 		err := es.Append(context.Background(), &e)
 		assert.NotNil(t, err)
 		checkErr := &store.EventAlreadyExistsError{}
 		assert.True(t, errors.As(err, &checkErr))
+		t.Log(err)
 	})
 
 	t.Run("QueryAll Items from Envelope Store", func(t *testing.T) {
@@ -129,6 +134,7 @@ func TestEventStore(t *testing.T) {
 		hpEvent := hitpoints.PlayerCharacterHitPoints{}
 		err = proto.Unmarshal(agg.Event, &hpEvent)
 		require.Nil(t, err)
+		fmt.Printf("%#v", hpEvent)
 		assert.Equal(t, hp, hpEvent.CharacterHitPoints)
 		assert.Equal(t, name, hpEvent.CharacterName)
 	})
