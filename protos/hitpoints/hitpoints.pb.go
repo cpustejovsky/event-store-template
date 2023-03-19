@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.28.1
 // 	protoc        v3.12.4
-// source: protos/hitpoints/hitpoints.proto
+// source: protos/hitpoints/levels.proto
 
 package hitpoints
 
