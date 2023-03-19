@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option go_package = "github.com/cpustejovsky/event-store/protos/levels";
+
+package levels;
+
+// PlayerCharacterHitPoints records changes hit points
+// for the player character with CharacterName
+// along with a Note as to the reason
+
+enum LevelType {
+  Empty = 0;
+  XP = 1;
+  Milestone = 2;
+}
+
+message Level {
+  string CharacterName = 1;
+  LevelType LevelType = 2;
+  optional int32 Experience = 3;
+  optional int32 Levels = 4;
+}
