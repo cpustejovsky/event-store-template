@@ -109,7 +109,6 @@ func TestEventStore(t *testing.T) {
 		assert.NotNil(t, err)
 		checkErr := &store.EventAlreadyExistsError{}
 		assert.True(t, errors.As(err, &checkErr))
-		t.Log(err)
 	})
 
 	t.Run("QueryAll Items from Envelope Store", func(t *testing.T) {

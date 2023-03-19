@@ -10,34 +10,57 @@ type Level struct {
 	pb.Level
 }
 
-type InconsistentLevelTypeError struct {
-}
-
 func (l *Level) Aggregate(events [][]byte) ([]byte, error) {
 	var lvl pb.Level
+	var levelEvents []pb.Level
 	m := make(map[pb.LevelType]struct{})
+	//Unmarshal events; add LevelType to map
 	for _, event := range events {
 		err := proto.Unmarshal(event, &lvl)
 		if err != nil {
 			return nil, err
 		}
 		m[lvl.GetLevelType()] = struct{}{}
-		lvlSum := l.GetLevels() + lvl.GetLevels()
-		l.Levels = &lvlSum
-		expSum := l.GetExperience() + lvl.GetExperience()
-		l.Experience = &expSum
-		l.CharacterName = lvl.CharacterName
-		l.LevelType = lvl.GetLevelType()
+		levelEvents = append(levelEvents, lvl)
 	}
+	//Make check for consistent, non-empty level type
 	_, milestone := m[pb.LevelType_Milestone]
 	_, xp := m[pb.LevelType_XP]
 	_, empty := m[pb.LevelType_Empty]
 	if (milestone && xp) || empty {
 		return nil, errors.New("either multiple leveling systems used or no leveling system provided")
 	}
+
+	//Aggregate events
+	switch levelEvents[0].GetLevelType() {
+	case pb.LevelType_XP:
+		l.aggregateXP(levelEvents)
+	case pb.LevelType_Milestone:
+		l.aggregateMilestone(levelEvents)
+	}
+	//Apply static properties to aggregate
+	first := levelEvents[0]
+	l.CharacterName = first.GetCharacterName()
+	l.LevelType = first.GetLevelType()
 	bin, err := proto.Marshal(l)
 	if err != nil {
 		return nil, err
 	}
 	return bin, nil
+}
+
+func (l *Level) aggregateXP(events []pb.Level) {
+	for _, e := range events {
+		expSum := l.GetExperience() + e.GetExperience()
+		l.Experience = &expSum
+	}
+	l.Levels = nil
+}
+
+func (l *Level) aggregateMilestone(events []pb.Level) {
+	for _, e := range events {
+		lvlSum := l.GetLevels() + e.GetLevels()
+		l.Levels = &lvlSum
+	}
+	l.Experience = nil
 }
