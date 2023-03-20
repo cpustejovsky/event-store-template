@@ -10,7 +10,7 @@ import (
 
 func TestLevels_Aggregate(t *testing.T) {
 	name := "cpustejovsky"
-	t.Run("Aggregate Level events with milestone system", func(t *testing.T) {
+	t.Run("Aggregate Levels events with milestone system", func(t *testing.T) {
 		var l int32 = 1
 		levelEvents := []pb.Level{
 			{
@@ -44,7 +44,7 @@ func TestLevels_Aggregate(t *testing.T) {
 			want.Levels = &sum
 			want.CharacterName = e.CharacterName
 		}
-		lvl := Level{}
+		lvl := Levels{}
 		got := &pb.Level{}
 		gotbin, err := lvl.Aggregate(bins)
 		require.Nil(t, err)
@@ -52,7 +52,7 @@ func TestLevels_Aggregate(t *testing.T) {
 		assert.Equal(t, want.CharacterName, got.CharacterName)
 		assert.Equal(t, want.GetLevels(), got.GetLevels())
 	})
-	t.Run("Aggregate Level events with XP system", func(t *testing.T) {
+	t.Run("Aggregate Levels events with XP system", func(t *testing.T) {
 		var exp1 int32 = 50
 		var exp2 int32 = 25
 		var exp3 int32 = 75
@@ -88,7 +88,7 @@ func TestLevels_Aggregate(t *testing.T) {
 			want.Experience = &sum
 			want.CharacterName = e.CharacterName
 		}
-		lvl := Level{}
+		lvl := Levels{}
 		got := &pb.Level{}
 		gotbin, err := lvl.Aggregate(bins)
 		require.Nil(t, err)
@@ -96,7 +96,7 @@ func TestLevels_Aggregate(t *testing.T) {
 		assert.Equal(t, want.CharacterName, got.CharacterName)
 		assert.Equal(t, want.GetExperience(), got.GetExperience())
 	})
-	t.Run("Aggregate Level events with XP system", func(t *testing.T) {
+	t.Run("Aggregate Levels events with XP system", func(t *testing.T) {
 		var l int32 = 1
 		var exp1 int32 = 50
 		var exp2 int32 = 75
@@ -132,7 +132,7 @@ func TestLevels_Aggregate(t *testing.T) {
 			want.Experience = &sum
 			want.CharacterName = e.CharacterName
 		}
-		lvl := Level{}
+		lvl := Levels{}
 		_, err := lvl.Aggregate(bins)
 		require.Error(t, err)
 	})

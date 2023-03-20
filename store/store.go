@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/cpustejovsky/event-store/event"
+	"github.com/cpustejovsky/event-store/events"
 	"strconv"
 )
 
@@ -40,7 +40,7 @@ func New(db *dynamodb.Client, table string) *EventStore {
 
 // Append takes a context and Envelope and returns an error
 // It ensures the Version does not already exist then attempts a PUT operation on the DynamoDB EventStoreTable
-func (es *EventStore) Append(ctx context.Context, e *event.Envelope) error {
+func (es *EventStore) Append(ctx context.Context, e *events.Envelope) error {
 	//This condition makes sure the sort key Version does not already exist
 	input := &dynamodb.PutItemInput{
 		TableName: &es.Table,
@@ -69,13 +69,13 @@ func (es *EventStore) Append(ctx context.Context, e *event.Envelope) error {
 	return nil
 }
 
-func (es *EventStore) Snapshot(ctx context.Context, agg *event.Envelope) error {
+func (es *EventStore) Snapshot(ctx context.Context, agg *events.Envelope) error {
 	agg.Note = SnapshotValue
 	return es.Append(ctx, agg)
 }
 
 // Project takes an id, queries events since the last snapshot, and returns a reconstituted Envelope
-func (es *EventStore) Project(ctx context.Context, id string) (*event.Envelope, error) {
+func (es *EventStore) Project(ctx context.Context, id string) (*events.Envelope, error) {
 	version, err := es.getLastSnapshotVersion(ctx, id)
 	if err != nil {
 		return nil, err
@@ -88,15 +88,15 @@ func (es *EventStore) Project(ctx context.Context, id string) (*event.Envelope, 
 			":version": &types.AttributeValueMemberN{Value: strconv.Itoa(version)},
 		},
 	}
-	events, err := es.query(ctx, &params)
+	e, err := es.query(ctx, &params)
 	if err != nil {
 		return nil, err
 	}
-	return event.AggregateEnvelopes(events)
+	return events.AggregateEnvelopes(e)
 }
 
 // QueryAll takes a context and id and returns a slice of Events and an error
-func (es *EventStore) QueryAll(ctx context.Context, id string) ([]event.Envelope, error) {
+func (es *EventStore) QueryAll(ctx context.Context, id string) ([]events.Envelope, error) {
 	params := dynamodb.QueryInput{
 		TableName:              aws.String(es.Table),
 		KeyConditionExpression: aws.String("Id = :uuid"),
@@ -135,8 +135,8 @@ func (es *EventStore) getLastSnapshotVersion(ctx context.Context, id string) (in
 }
 
 // query takes a context and DynamoDB query parameters and returns a slice of Events and an error
-func (es *EventStore) query(ctx context.Context, params *dynamodb.QueryInput) ([]event.Envelope, error) {
-	var events []event.Envelope
+func (es *EventStore) query(ctx context.Context, params *dynamodb.QueryInput) ([]events.Envelope, error) {
+	var events []events.Envelope
 	// Query paginator provides pagination for queries until there are no more pages for DynamoDB to go through
 	// See: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Query.Pagination.htm
 	p := dynamodb.NewQueryPaginator(es.DB, params)

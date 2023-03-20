@@ -6,11 +6,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type Level struct {
+type Levels struct {
 	pb.Level
 }
 
-func (l *Level) Aggregate(events [][]byte) ([]byte, error) {
+func (l *Levels) Aggregate(events [][]byte) ([]byte, error) {
 	var lvl pb.Level
 	var levelEvents []pb.Level
 	m := make(map[pb.LevelType]struct{})
@@ -49,7 +49,7 @@ func (l *Level) Aggregate(events [][]byte) ([]byte, error) {
 	return bin, nil
 }
 
-func (l *Level) aggregateXP(events []pb.Level) {
+func (l *Levels) aggregateXP(events []pb.Level) {
 	for _, e := range events {
 		expSum := l.GetExperience() + e.GetExperience()
 		l.Experience = &expSum
@@ -57,7 +57,7 @@ func (l *Level) aggregateXP(events []pb.Level) {
 	l.Levels = nil
 }
 
-func (l *Level) aggregateMilestone(events []pb.Level) {
+func (l *Levels) aggregateMilestone(events []pb.Level) {
 	for _, e := range events {
 		lvlSum := l.GetLevels() + e.GetLevels()
 		l.Levels = &lvlSum
