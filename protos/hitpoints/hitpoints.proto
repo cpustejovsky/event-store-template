@@ -1,6 +1,8 @@
 
 syntax = "proto3";
 
+import "google/protobuf/empty.proto";
+
 option go_package = "github.com/cpustejovsky/event-store/protos/hitpoints";
 
 package hitpoints;
@@ -12,4 +14,8 @@ message PlayerCharacterHitPoints {
   string CharacterName = 1;
   int32 CharacterHitPoints = 2;
   string Note = 3;
+}
+
+service HitPointsRecorder {
+  rpc RecordHitPoints(PlayerCharacterHitPoints) returns (google.protobuf.Empty) {}
 }
