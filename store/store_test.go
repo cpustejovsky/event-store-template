@@ -3,13 +3,11 @@ package store_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/cpustejovsky/event-store/event"
 	"github.com/cpustejovsky/event-store/events"
 	"github.com/cpustejovsky/event-store/protos/hitpoints"
 	"github.com/cpustejovsky/event-store/store"
@@ -73,13 +71,13 @@ func TestEventStore(t *testing.T) {
 		CharacterHitPoints: -3,
 		Note:               "bludgeoning damage from bugbear",
 	}}
-	var envelopes []event.Envelope
+	var envelopes []events.Envelope
 	for i, e := range hitPointEvents {
 		bin, err := proto.Marshal(&e)
 		if err != nil {
 			t.Fatal(err)
 		}
-		envelopes = append(envelopes, event.Envelope{
+		envelopes = append(envelopes, events.Envelope{
 			Id:        id,
 			Version:   i,
 			Event:     bin,
@@ -98,7 +96,7 @@ func TestEventStore(t *testing.T) {
 	})
 
 	t.Run("Attempt to append existing version to event store and fail", func(t *testing.T) {
-		e := event.Envelope{
+		e := events.Envelope{
 			Id:        id,
 			Version:   0,
 			EventName: "test",
@@ -133,7 +131,6 @@ func TestEventStore(t *testing.T) {
 		hpEvent := hitpoints.PlayerCharacterHitPoints{}
 		err = proto.Unmarshal(agg.Event, &hpEvent)
 		require.Nil(t, err)
-		fmt.Printf("%#v", hpEvent)
 		assert.Equal(t, hp, hpEvent.CharacterHitPoints)
 		assert.Equal(t, name, hpEvent.CharacterName)
 	})
@@ -149,8 +146,8 @@ func TestEventStore(t *testing.T) {
 		queriedEvents, err := es.QueryAll(ctx, id)
 		assert.Nil(t, err)
 		assert.Equal(t, len(envelopes), len(queriedEvents))
-		for _, event := range envelopes {
-			assert.NotEqual(t, store.SnapshotValue, event.Note)
+		for _, e := range envelopes {
+			assert.NotEqual(t, store.SnapshotValue, e.Note)
 		}
 	})
 
