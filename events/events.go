@@ -1,12 +1,21 @@
 package events
 
 import (
+	"fmt"
 	hitpointspb "github.com/cpustejovsky/event-store/protos/hitpoints"
 	levelspb "github.com/cpustejovsky/event-store/protos/levels"
 )
 
 type Aggregator interface {
 	Aggregate([][]byte) ([]byte, error)
+}
+
+type AggregatorNotFoundError struct {
+	Name string
+}
+
+func (e *AggregatorNotFoundError) Error() string {
+	return fmt.Sprintf("aggregator not found for name %s", e.Name)
 }
 
 var HitPointsName string = string(hitpointspb.File_protos_hitpoints_hitpoints_proto.FullName().Name())
@@ -27,7 +36,15 @@ type Envelope struct {
 	Version   int
 	Event     []byte
 	EventName string
-	Note      string
+}
+
+// Snapshot contains aggregated event information along with last version
+type Snapshot struct {
+	Id            string
+	Version       int
+	LatestVersion int
+	Event         []byte
+	EventName     string
 }
 
 func AggregateEnvelopes(envelopes []Envelope) (*Envelope, error) {
@@ -51,7 +68,11 @@ func AggregateEnvelopes(envelopes []Envelope) (*Envelope, error) {
 }
 
 func reconstituteEvents(es [][]byte, name string) ([]byte, error) {
-	//map name to wrapper of protobuf type that has a reconstitute method
+	//map Name to wrapper of protobuf type that has a reconstitute method
 	m := NewEventMap()
-	return m[name].Aggregate(es)
+	agg, ok := m[name]
+	if !ok {
+		return nil, &AggregatorNotFoundError{Name: name}
+	}
+	return agg.Aggregate(es)
 }
