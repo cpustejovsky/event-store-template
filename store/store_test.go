@@ -99,9 +99,8 @@ func TestEventStore(t *testing.T) {
 		e := events.Envelope{
 			Id:        id,
 			Version:   0,
-			EventName: "test",
+			EventName: events.HitPointsName,
 			Event:     []byte{},
-			Note:      "",
 		}
 		err := es.Append(context.Background(), &e)
 		assert.NotNil(t, err)
@@ -137,8 +136,14 @@ func TestEventStore(t *testing.T) {
 
 	t.Run("Snapshot should return no error", func(t *testing.T) {
 		agg, err := es.Project(ctx, id)
-		assert.Nil(t, err)
-		err = es.Snapshot(ctx, agg)
+		require.Nil(t, err)
+		snapshot := &events.Snapshot{
+			Id:            agg.Id,
+			LatestVersion: agg.Version,
+			Event:         agg.Event,
+			EventName:     agg.EventName,
+		}
+		err = es.Snapshot(ctx, snapshot)
 		assert.Nil(t, err)
 	})
 
@@ -146,9 +151,9 @@ func TestEventStore(t *testing.T) {
 		queriedEvents, err := es.QueryAll(ctx, id)
 		assert.Nil(t, err)
 		assert.Equal(t, len(envelopes), len(queriedEvents))
-		for _, e := range envelopes {
-			assert.NotEqual(t, store.SnapshotValue, e.Note)
-		}
+		//for _, e := range envelopes {
+		//	assert.NotEqual(t, store.SnapshotValue, e.Note)
+		//}
 	})
 
 	t.Cleanup(func() {
@@ -157,6 +162,19 @@ func TestEventStore(t *testing.T) {
 				TableName: &EventStoreTable,
 				Key: map[string]types.AttributeValue{
 					"Id":      &types.AttributeValueMemberS{Value: id},
+					"Version": &types.AttributeValueMemberN{Value: strconv.Itoa(i)},
+				},
+			}
+			_, err := client.DeleteItem(context.Background(), &params)
+			if err != nil {
+				t.Log("Error deleting items for cleanup:\t", err)
+			}
+		}
+		for i := 0; i < len(envelopes); i++ {
+			params := dynamodb.DeleteItemInput{
+				TableName: &EventStoreTable,
+				Key: map[string]types.AttributeValue{
+					"Id":      &types.AttributeValueMemberS{Value: id + store.SnapshotValue},
 					"Version": &types.AttributeValueMemberN{Value: strconv.Itoa(i)},
 				},
 			}
