@@ -107,6 +107,29 @@ func (es *EventStore) Project(ctx context.Context, id string) (*events.Envelope,
 	return events.AggregateEnvelopes(envelopes)
 }
 
+func (es *EventStore) QueryLatestVersion(ctx context.Context, id string) (int, error) {
+	params := dynamodb.QueryInput{
+		TableName:              aws.String(es.Table),
+		KeyConditionExpression: aws.String("Id = :uuid"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":uuid": &types.AttributeValueMemberS{Value: id},
+		},
+		Limit:            aws.Int32(1),
+		ScanIndexForward: aws.Bool(false),
+	}
+	var e []events.Snapshot
+	mapList, err := es.query(ctx, &params)
+	if err != nil {
+		return 0, err
+	}
+	err = attributevalue.UnmarshalListOfMaps(mapList, &e)
+
+	if err != nil {
+		return 0, err
+	}
+	return e[0].Version, nil
+}
+
 // QueryAll takes a context and id and returns a slice of Events and an error
 func (es *EventStore) QueryAll(ctx context.Context, id string) ([]events.Envelope, error) {
 	params := dynamodb.QueryInput{
