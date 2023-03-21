@@ -143,10 +143,8 @@ func (d *DynamoDBEventStore) QueryAll(ctx context.Context, id string) ([]events.
 	params := dynamodb.QueryInput{
 		TableName:              aws.String(d.Table),
 		KeyConditionExpression: aws.String("Id = :uuid"),
-		FilterExpression:       aws.String("Note <> :note"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":uuid": &types.AttributeValueMemberS{Value: id},
-			":note": &types.AttributeValueMemberS{Value: SnapshotValue},
 		},
 	}
 	maplist, err := d.query(ctx, &params)
