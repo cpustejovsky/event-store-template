@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
+	"log"
 	"os"
-	"strconv"
 	"testing"
 	"time"
 )
@@ -157,30 +157,27 @@ func TestEventStore(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		for i := 0; i < len(envelopes); i++ {
-			params := dynamodb.DeleteItemInput{
-				TableName: &EventStoreTable,
-				Key: map[string]types.AttributeValue{
-					"Id":      &types.AttributeValueMemberS{Value: id},
-					"Version": &types.AttributeValueMemberN{Value: strconv.Itoa(i)},
-				},
-			}
-			_, err := client.DeleteItem(context.Background(), &params)
+		p := dynamodb.NewScanPaginator(client, &dynamodb.ScanInput{
+			TableName: aws.String(EventStoreTable),
+		})
+		for p.HasMorePages() {
+			out, err := p.NextPage(context.TODO())
 			if err != nil {
-				t.Log("Error deleting items for cleanup:\t", err)
+				panic(err)
 			}
-		}
-		for i := 0; i < len(envelopes); i++ {
-			params := dynamodb.DeleteItemInput{
-				TableName: &EventStoreTable,
-				Key: map[string]types.AttributeValue{
-					"Id":      &types.AttributeValueMemberS{Value: id + store.SnapshotValue},
-					"Version": &types.AttributeValueMemberN{Value: strconv.Itoa(i)},
-				},
-			}
-			_, err := client.DeleteItem(context.Background(), &params)
-			if err != nil {
-				t.Log("Error deleting items for cleanup:\t", err)
+
+			for _, item := range out.Items {
+				_, err = client.DeleteItem(context.TODO(), &dynamodb.DeleteItemInput{
+					TableName: aws.String(EventStoreTable),
+					Key: map[string]types.AttributeValue{
+						"Id":      item["Id"],
+						"Version": item["Version"],
+					},
+				})
+				if err != nil {
+					log.Println(err)
+					panic(err)
+				}
 			}
 		}
 	})
