@@ -18,20 +18,17 @@ import (
 	"log"
 	"os"
 	"testing"
-	"time"
 )
 
 var EventStoreTable = "event-store"
+var hp int32
+var client *dynamodb.Client
+var ctx = context.Background()
+var id = "1aa75e80-51e4-48d9-a5b7-2f5e49e78e86"
+var name = "cpustejovsky"
 
-func TestEventStore(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping acceptance test")
-	}
-
+func init() {
 	//Create Dynamodb Client
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRegion(os.Getenv("AWS_REGION")),
 		config.WithEndpointResolverWithOptions(
@@ -50,29 +47,40 @@ func TestEventStore(t *testing.T) {
 			},
 		),
 	)
-	require.Nil(t, err)
+	if err != nil {
+		log.Fatal(err)
+	}
+	client = dynamodb.NewFromConfig(cfg)
+}
 
-	//Create Envelope Store
-	client := dynamodb.NewFromConfig(cfg)
+func TestEventStore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping acceptance test")
+	}
+
+	//Create Event Store
 	es := store.DynamoDB(client, EventStoreTable)
 	require.NotNil(t, es)
-	id := uuid.NewString()
-	name := "cpustejovsky"
+
 	hitPointEvents := []hitpoints.PlayerCharacterHitPoints{{
+		Id:                 id,
 		CharacterName:      name,
 		CharacterHitPoints: 8,
 		Note:               "Init",
 	}, {
+		Id:                 id,
 		CharacterName:      name,
 		CharacterHitPoints: -2,
 		Note:               "Slashing damage from goblin",
 	}, {
+		Id:                 id,
 		CharacterName:      name,
 		CharacterHitPoints: -3,
 		Note:               "bludgeoning damage from bugbear",
 	}}
 	var envelopes []events.Envelope
 	for i, e := range hitPointEvents {
+		hp += e.GetCharacterHitPoints()
 		bin, err := proto.Marshal(&e)
 		if err != nil {
 			t.Fatal(err)
@@ -85,10 +93,9 @@ func TestEventStore(t *testing.T) {
 		})
 	}
 
-	hp := hitPointEvents[0].CharacterHitPoints + hitPointEvents[1].CharacterHitPoints + hitPointEvents[2].CharacterHitPoints
 	t.Run("Append Items to Envelope Store", func(t *testing.T) {
 		for _, event := range envelopes {
-			err := es.Append(context.Background(), &event)
+			err := es.Append(ctx, &event)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -102,7 +109,7 @@ func TestEventStore(t *testing.T) {
 			EventName: events.HitPointsName,
 			Event:     []byte{},
 		}
-		err := es.Append(context.Background(), &e)
+		err := es.Append(ctx, &e)
 		assert.NotNil(t, err)
 		checkErr := &store.EventAlreadyExistsError{}
 		assert.True(t, errors.As(err, &checkErr))
@@ -151,9 +158,6 @@ func TestEventStore(t *testing.T) {
 		queriedEvents, err := es.QueryAll(ctx, id)
 		assert.Nil(t, err)
 		assert.Equal(t, len(envelopes), len(queriedEvents))
-		//for _, e := range envelopes {
-		//	assert.NotEqual(t, store.SnapshotValue, e.Note)
-		//}
 	})
 
 	t.Cleanup(func() {
@@ -161,13 +165,13 @@ func TestEventStore(t *testing.T) {
 			TableName: aws.String(EventStoreTable),
 		})
 		for p.HasMorePages() {
-			out, err := p.NextPage(context.TODO())
+			out, err := p.NextPage(ctx)
 			if err != nil {
-				panic(err)
+				t.Fatal(err)
 			}
 
 			for _, item := range out.Items {
-				_, err = client.DeleteItem(context.TODO(), &dynamodb.DeleteItemInput{
+				_, err = client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 					TableName: aws.String(EventStoreTable),
 					Key: map[string]types.AttributeValue{
 						"Id":      item["Id"],
@@ -175,8 +179,7 @@ func TestEventStore(t *testing.T) {
 					},
 				})
 				if err != nil {
-					log.Println(err)
-					panic(err)
+					t.Fatal(err)
 				}
 			}
 		}

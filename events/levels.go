@@ -40,6 +40,7 @@ func (l *Levels) Aggregate(events [][]byte) ([]byte, error) {
 	}
 	//Apply static properties to aggregate
 	first := levelEvents[0]
+	l.Id = first.GetId()
 	l.CharacterName = first.GetCharacterName()
 	l.LevelType = first.GetLevelType()
 	bin, err := proto.Marshal(l)

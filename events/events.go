@@ -21,10 +21,10 @@ func (e *AggregatorNotFoundError) Error() string {
 var HitPointsName string = string(hitpointspb.File_protos_hitpoints_hitpoints_proto.FullName().Name())
 var LevelsName string = string(levelspb.File_protos_levels_levels_proto.FullName().Name())
 
-type EventsMap map[string]Aggregator
+type AggregatorMap map[string]Aggregator
 
-func NewEventMap() EventsMap {
-	return EventsMap{
+func NewEventMap() AggregatorMap {
+	return AggregatorMap{
 		HitPointsName: &HitPoints{},
 		LevelsName:    &Levels{},
 	}
@@ -49,7 +49,7 @@ type Snapshot struct {
 
 func AggregateEnvelopes(envelopes []Envelope) (*Envelope, error) {
 	var e Envelope
-	//Loop through envelopes to get
+	//Loop through envelopes to get events to append into a slice that is reconstituted based on EventName
 	var events [][]byte
 	for i, envelope := range envelopes {
 		if i == len(envelopes)-1 {

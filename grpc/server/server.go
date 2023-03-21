@@ -7,7 +7,6 @@ import (
 	pb "github.com/cpustejovsky/event-store/protos/hitpoints"
 	"github.com/cpustejovsky/event-store/store"
 	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -27,14 +26,14 @@ func (s *Server) RecordHitPoints(ctx context.Context, hp *pb.PlayerCharacterHitP
 	if err != nil {
 		return nil, err
 	}
-	id := uuid.NewString()
+	id := hp.GetId()
 	v, err := s.Store.QueryLatestVersion(ctx, id)
 	if err != nil && !errors.Is(err, &store.NoEventFoundError{}) {
 		return nil, err
 	}
 	envelope := events.Envelope{
 		Id:        id,
-		Version:   v,
+		Version:   v + 1,
 		Event:     bin,
 		EventName: string(pb.File_protos_hitpoints_hitpoints_proto.FullName()),
 	}

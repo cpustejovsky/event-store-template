@@ -14,6 +14,7 @@ import (
 )
 
 var EventStoreTable = "event-store"
+var id = "ab9261dc-685c-4cec-b6f0-f6fb886cdf7cs"
 
 type StubEventStore struct {
 	Appended             bool
@@ -69,9 +70,10 @@ func TestNewServer(t *testing.T) {
 	defer conn.Close()
 	c := pb.NewHitPointsRecorderClient(conn)
 	pchp := pb.PlayerCharacterHitPoints{
+		Id:                 id,
 		CharacterName:      "cpustejovsky",
 		CharacterHitPoints: 8,
-		Note:               "initualization",
+		Note:               "initialization",
 	}
 	_, err = c.RecordHitPoints(ctx, &pchp)
 	assert.Nil(t, err)

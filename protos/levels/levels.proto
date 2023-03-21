@@ -15,8 +15,9 @@ enum LevelType {
 }
 
 message Level {
-  string CharacterName = 1;
-  LevelType LevelType = 2;
-  optional int32 Experience = 3;
-  optional int32 Levels = 4;
+  string Id = 1;
+  string CharacterName = 2;
+  LevelType LevelType = 3;
+  optional int32 Experience = 4;
+  optional int32 Levels = 5;
 }
