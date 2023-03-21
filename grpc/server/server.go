@@ -12,11 +12,11 @@ import (
 )
 
 type Server struct {
-	Store *store.EventStore
+	Store store.EventStore
 	pb.UnimplementedHitPointsRecorderServer
 }
 
-func New(es *store.EventStore) *Server {
+func New(es store.EventStore) *Server {
 	return &Server{
 		Store: es,
 	}

@@ -17,7 +17,15 @@ const SnapshotValue string = "SNAPSHOT"
 type AttributeValueMap map[string]types.AttributeValue
 type AttributeValueMapList []map[string]types.AttributeValue
 
-type EventStore struct {
+type EventStore interface {
+	Append(context.Context, *events.Envelope) error
+	Snapshot(context.Context, *events.Snapshot) error
+	Project(context.Context, string) (*events.Envelope, error)
+	QueryLatestVersion(context.Context, string) (int, error)
+	QueryAll(context.Context, string) ([]events.Envelope, error)
+}
+
+type DynamoDBEventStore struct {
 	DB    *dynamodb.Client
 	Table string
 }
@@ -37,13 +45,13 @@ func (e *NoEventFoundError) Error() string {
 	return "no event found"
 }
 
-func New(db *dynamodb.Client, table string) *EventStore {
-	return &EventStore{DB: db, Table: table}
+func DynamoDB(db *dynamodb.Client, table string) *DynamoDBEventStore {
+	return &DynamoDBEventStore{DB: db, Table: table}
 }
 
 // Append takes a context and Envelope and returns an error
 // It ensures the Version does not already exist then attempts a PUT operation on the DynamoDB EventStoreTable
-func (es *EventStore) Append(ctx context.Context, e *events.Envelope) error {
+func (d *DynamoDBEventStore) Append(ctx context.Context, e *events.Envelope) error {
 	valueMap := AttributeValueMap{
 		"Id": &types.AttributeValueMemberS{Value: e.Id},
 		//AttributeValueMemberN takes a string value, see https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html
@@ -51,10 +59,10 @@ func (es *EventStore) Append(ctx context.Context, e *events.Envelope) error {
 		"EventName": &types.AttributeValueMemberS{Value: e.EventName},
 		"Event":     &types.AttributeValueMemberB{Value: e.Event},
 	}
-	return es.append(ctx, valueMap)
+	return d.append(ctx, valueMap)
 }
 
-func (es *EventStore) Snapshot(ctx context.Context, snapshot *events.Snapshot) error {
+func (d *DynamoDBEventStore) Snapshot(ctx context.Context, snapshot *events.Snapshot) error {
 	valueMap := AttributeValueMap{
 		"Id":            &types.AttributeValueMemberS{Value: snapshot.Id + SnapshotValue},
 		"Version":       &types.AttributeValueMemberN{Value: strconv.Itoa(snapshot.Version)},
@@ -63,16 +71,16 @@ func (es *EventStore) Snapshot(ctx context.Context, snapshot *events.Snapshot) e
 		"Event":         &types.AttributeValueMemberB{Value: snapshot.Event},
 	}
 
-	return es.append(ctx, valueMap)
+	return d.append(ctx, valueMap)
 }
 
 // Project takes an id, queries events since the last snapshot, and returns a reconstituted Envelope
-func (es *EventStore) Project(ctx context.Context, id string) (*events.Envelope, error) {
-	snapshot, err := es.getLatestSnapshot(ctx, id)
+func (d *DynamoDBEventStore) Project(ctx context.Context, id string) (*events.Envelope, error) {
+	snapshot, err := d.getLatestSnapshot(ctx, id)
 	if err != nil {
 		checkErr := &NoEventFoundError{}
 		if errors.As(err, &checkErr) {
-			envelopes, err := es.QueryAll(ctx, id)
+			envelopes, err := d.QueryAll(ctx, id)
 			if err != nil {
 				return nil, err
 			}
@@ -81,14 +89,14 @@ func (es *EventStore) Project(ctx context.Context, id string) (*events.Envelope,
 		return nil, err
 	}
 	params := dynamodb.QueryInput{
-		TableName:              aws.String(es.Table),
+		TableName:              aws.String(d.Table),
 		KeyConditionExpression: aws.String("Id = :uuid AND Version >= :version"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":uuid":    &types.AttributeValueMemberS{Value: id},
 			":version": &types.AttributeValueMemberN{Value: strconv.Itoa(snapshot.LatestVersion)},
 		},
 	}
-	ml, err := es.query(ctx, &params)
+	ml, err := d.query(ctx, &params)
 	if err != nil {
 		return nil, err
 	}
@@ -107,9 +115,9 @@ func (es *EventStore) Project(ctx context.Context, id string) (*events.Envelope,
 	return events.AggregateEnvelopes(envelopes)
 }
 
-func (es *EventStore) QueryLatestVersion(ctx context.Context, id string) (int, error) {
+func (d *DynamoDBEventStore) QueryLatestVersion(ctx context.Context, id string) (int, error) {
 	params := dynamodb.QueryInput{
-		TableName:              aws.String(es.Table),
+		TableName:              aws.String(d.Table),
 		KeyConditionExpression: aws.String("Id = :uuid"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":uuid": &types.AttributeValueMemberS{Value: id},
@@ -118,7 +126,7 @@ func (es *EventStore) QueryLatestVersion(ctx context.Context, id string) (int, e
 		ScanIndexForward: aws.Bool(false),
 	}
 	var e []events.Snapshot
-	mapList, err := es.query(ctx, &params)
+	mapList, err := d.query(ctx, &params)
 	if err != nil {
 		return 0, err
 	}
@@ -131,9 +139,9 @@ func (es *EventStore) QueryLatestVersion(ctx context.Context, id string) (int, e
 }
 
 // QueryAll takes a context and id and returns a slice of Events and an error
-func (es *EventStore) QueryAll(ctx context.Context, id string) ([]events.Envelope, error) {
+func (d *DynamoDBEventStore) QueryAll(ctx context.Context, id string) ([]events.Envelope, error) {
 	params := dynamodb.QueryInput{
-		TableName:              aws.String(es.Table),
+		TableName:              aws.String(d.Table),
 		KeyConditionExpression: aws.String("Id = :uuid"),
 		FilterExpression:       aws.String("Note <> :note"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
@@ -141,7 +149,7 @@ func (es *EventStore) QueryAll(ctx context.Context, id string) ([]events.Envelop
 			":note": &types.AttributeValueMemberS{Value: SnapshotValue},
 		},
 	}
-	maplist, err := es.query(ctx, &params)
+	maplist, err := d.query(ctx, &params)
 	if err != nil {
 		return nil, err
 	}
@@ -153,9 +161,9 @@ func (es *EventStore) QueryAll(ctx context.Context, id string) ([]events.Envelop
 	return events, nil
 }
 
-func (es *EventStore) getLatestSnapshot(ctx context.Context, id string) (*events.Snapshot, error) {
+func (d *DynamoDBEventStore) getLatestSnapshot(ctx context.Context, id string) (*events.Snapshot, error) {
 	params := dynamodb.QueryInput{
-		TableName:              aws.String(es.Table),
+		TableName:              aws.String(d.Table),
 		KeyConditionExpression: aws.String("Id = :uuid"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":uuid": &types.AttributeValueMemberS{Value: id + SnapshotValue},
@@ -164,7 +172,7 @@ func (es *EventStore) getLatestSnapshot(ctx context.Context, id string) (*events
 		ScanIndexForward: aws.Bool(false),
 	}
 	var snapshots []events.Snapshot
-	mapList, err := es.query(ctx, &params)
+	mapList, err := d.query(ctx, &params)
 	if err != nil {
 		return nil, err
 	}
@@ -177,11 +185,11 @@ func (es *EventStore) getLatestSnapshot(ctx context.Context, id string) (*events
 }
 
 // query takes a context and DynamoDB query parameters and returns a slice of Events and an error
-func (es *EventStore) query(ctx context.Context, params *dynamodb.QueryInput) (AttributeValueMapList, error) {
+func (d *DynamoDBEventStore) query(ctx context.Context, params *dynamodb.QueryInput) (AttributeValueMapList, error) {
 	var maps AttributeValueMapList
 	// Query paginator provides pagination for queries until there are no more pages for DynamoDB to go through
 	// See: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Query.Pagination.htm
-	p := dynamodb.NewQueryPaginator(es.DB, params)
+	p := dynamodb.NewQueryPaginator(d.DB, params)
 	for p.HasMorePages() {
 		out, err := p.NextPage(ctx)
 		if err != nil {
@@ -197,14 +205,14 @@ func (es *EventStore) query(ctx context.Context, params *dynamodb.QueryInput) (A
 	return maps, nil
 }
 
-func (es *EventStore) append(ctx context.Context, valueMap AttributeValueMap) error {
+func (d *DynamoDBEventStore) append(ctx context.Context, valueMap AttributeValueMap) error {
 	//This condition makes sure the sort key Version does not already exist
 	input := &dynamodb.PutItemInput{
-		TableName:           &es.Table,
+		TableName:           &d.Table,
 		Item:                valueMap,
 		ConditionExpression: aws.String("attribute_not_exists(Version)"),
 	}
-	_, err := es.DB.PutItem(ctx, input)
+	_, err := d.DB.PutItem(ctx, input)
 	if err != nil {
 		//Using the errors package, the code checks if this is an error specific to the condition being failed and, if so, returns a sentinel error that can be checked
 		var errCheck *types.ConditionalCheckFailedException

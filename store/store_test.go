@@ -54,7 +54,7 @@ func TestEventStore(t *testing.T) {
 
 	//Create Envelope Store
 	client := dynamodb.NewFromConfig(cfg)
-	es := store.New(client, EventStoreTable)
+	es := store.DynamoDB(client, EventStoreTable)
 	require.NotNil(t, es)
 	id := uuid.NewString()
 	name := "cpustejovsky"
