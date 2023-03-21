@@ -17,21 +17,8 @@ const SnapshotValue string = "SNAPSHOT"
 type AttributeValueMap map[string]types.AttributeValue
 type AttributeValueMapList []map[string]types.AttributeValue
 
-type EventStore interface {
-	Append(context.Context, *events.Envelope) error
-	Snapshot(context.Context, *events.Snapshot) error
-	Project(context.Context, string) (*events.Envelope, error)
-	QueryLatestVersion(context.Context, string) (int, error)
-	QueryAll(context.Context, string) ([]events.Envelope, error)
-}
-
-type DynamoDBEventStore struct {
-	DB    *dynamodb.Client
-	Table string
-}
-
 type EventAlreadyExistsError struct {
-	ID      string ``
+	ID      string
 	Version int
 }
 
@@ -43,6 +30,19 @@ type NoEventFoundError struct{}
 
 func (e *NoEventFoundError) Error() string {
 	return "no event found"
+}
+
+type EventStore interface {
+	Append(context.Context, *events.Envelope) error
+	Snapshot(context.Context, *events.Snapshot) error
+	Project(context.Context, string) (*events.Envelope, error)
+	QueryLatestVersion(context.Context, string) (int, error)
+	QueryAll(context.Context, string) ([]events.Envelope, error)
+}
+
+type DynamoDBEventStore struct {
+	DB    *dynamodb.Client
+	Table string
 }
 
 func DynamoDB(db *dynamodb.Client, table string) *DynamoDBEventStore {
@@ -107,7 +107,7 @@ func (d *DynamoDBEventStore) Project(ctx context.Context, id string) (*events.En
 	}
 	snapshotEnvelope := events.Envelope{
 		Id:        snapshot.Id,
-		Version:   snapshot.LatestVersion - 1,
+		Version:   snapshot.LatestVersion + 1,
 		Event:     snapshot.Event,
 		EventName: snapshot.EventName,
 	}
@@ -128,12 +128,12 @@ func (d *DynamoDBEventStore) QueryLatestVersion(ctx context.Context, id string) 
 	var e []events.Snapshot
 	mapList, err := d.query(ctx, &params)
 	if err != nil {
-		return 0, err
+		return -1, err
 	}
 	err = attributevalue.UnmarshalListOfMaps(mapList, &e)
 
 	if err != nil {
-		return 0, err
+		return -1, err
 	}
 	return e[0].Version, nil
 }
@@ -206,10 +206,10 @@ func (d *DynamoDBEventStore) query(ctx context.Context, params *dynamodb.QueryIn
 }
 
 func (d *DynamoDBEventStore) append(ctx context.Context, valueMap AttributeValueMap) error {
-	//This condition makes sure the sort key Version does not already exist
 	input := &dynamodb.PutItemInput{
-		TableName:           &d.Table,
-		Item:                valueMap,
+		TableName: &d.Table,
+		Item:      valueMap,
+		//This condition makes sure the sort key Version does not already exist
 		ConditionExpression: aws.String("attribute_not_exists(Version)"),
 	}
 	_, err := d.DB.PutItem(ctx, input)

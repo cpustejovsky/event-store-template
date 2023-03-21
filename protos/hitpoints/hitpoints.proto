@@ -11,9 +11,10 @@ package hitpoints;
 // for the player character with CharacterName
 // along with a Note as to the reason
 message PlayerCharacterHitPoints {
-  string CharacterName = 1;
-  int32 CharacterHitPoints = 2;
-  string Note = 3;
+  string Id = 1;
+  string CharacterName = 2;
+  int32 CharacterHitPoints = 3;
+  string Note = 4;
 }
 
 service HitPointsRecorder {

@@ -2,6 +2,7 @@ package events
 
 import (
 	pb "github.com/cpustejovsky/event-store/protos/levels"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -10,22 +11,26 @@ import (
 
 func TestLevels_Aggregate(t *testing.T) {
 	name := "cpustejovsky"
+	id := uuid.NewString()
 	t.Run("Aggregate Levels events with milestone system", func(t *testing.T) {
 		var l int32 = 1
 		levelEvents := []pb.Level{
 			{
+				Id:            id,
 				CharacterName: name,
 				LevelType:     pb.LevelType_Milestone,
 				Experience:    nil,
 				Levels:        &l,
 			},
 			{
+				Id:            id,
 				CharacterName: name,
 				LevelType:     pb.LevelType_Milestone,
 				Experience:    nil,
 				Levels:        &l,
 			},
 			{
+				Id:            id,
 				CharacterName: name,
 				LevelType:     pb.LevelType_Milestone,
 				Experience:    nil,
@@ -58,18 +63,21 @@ func TestLevels_Aggregate(t *testing.T) {
 		var exp3 int32 = 75
 		levelEvents := []pb.Level{
 			{
+				Id:            id,
 				CharacterName: name,
 				LevelType:     pb.LevelType_XP,
 				Experience:    nil,
 				Levels:        &exp1,
 			},
 			{
+				Id:            id,
 				CharacterName: name,
 				LevelType:     pb.LevelType_XP,
 				Experience:    nil,
 				Levels:        &exp2,
 			},
 			{
+				Id:            id,
 				CharacterName: name,
 				LevelType:     pb.LevelType_XP,
 				Experience:    nil,
@@ -86,14 +94,16 @@ func TestLevels_Aggregate(t *testing.T) {
 			bins = append(bins, bin)
 			sum := want.GetExperience() + e.GetExperience()
 			want.Experience = &sum
-			want.CharacterName = e.CharacterName
+			want.CharacterName = e.GetCharacterName()
+			want.Id = e.GetId()
 		}
 		lvl := Levels{}
 		got := &pb.Level{}
 		gotbin, err := lvl.Aggregate(bins)
 		require.Nil(t, err)
 		err = proto.Unmarshal(gotbin, got)
-		assert.Equal(t, want.CharacterName, got.CharacterName)
+		assert.Equal(t, want.GetId(), got.GetId())
+		assert.Equal(t, want.GetCharacterName(), got.GetCharacterName())
 		assert.Equal(t, want.GetExperience(), got.GetExperience())
 	})
 	t.Run("Aggregate Levels events with XP system", func(t *testing.T) {
@@ -102,18 +112,21 @@ func TestLevels_Aggregate(t *testing.T) {
 		var exp2 int32 = 75
 		levelEvents := []pb.Level{
 			{
+				Id:            id,
 				CharacterName: name,
 				LevelType:     pb.LevelType_XP,
 				Experience:    nil,
 				Levels:        &exp1,
 			},
 			{
+				Id:            id,
 				CharacterName: name,
 				LevelType:     pb.LevelType_Milestone,
 				Experience:    nil,
 				Levels:        &l,
 			},
 			{
+				Id:            id,
 				CharacterName: name,
 				LevelType:     pb.LevelType_XP,
 				Experience:    nil,
